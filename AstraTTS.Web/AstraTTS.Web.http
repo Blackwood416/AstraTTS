@@ -1,0 +1,41 @@
+@AstraTTS.Web_HostAddress = http://localhost:5000
+
+### 流式语音合成（ffplay 直接播放）
+# 在 PowerShell 中执行：ffplay.exe -f f32le -ar 32000 -ac 1 -window_title "AstraTTS Stream" -nodisp "http://localhost:5179/api/tts/predict-stream?text=良宵方始，不必心急。"
+GET {{AstraTTS.Web_HostAddress}}/api/tts/predict-stream?text=良宵方始，不必心急。&speed=1.0
+
+### 创建流式合成会话
+POST {{AstraTTS.Web_HostAddress}}/api/tts/stream/create
+Content-Type: application/json
+
+{
+  "text": "良宵方始，不必心急。",
+  "speed": 1.0,
+  "noiseScale": 0.35,
+  "temperature": 1.0,
+  "topK": 15
+}
+
+### 获取流式音频数据（使用上面的 sessionId）
+GET {{AstraTTS.Web_HostAddress}}/api/tts/stream/{sessionId}
+
+### 取消流式合成会话
+DELETE {{AstraTTS.Web_HostAddress}}/api/tts/stream/{sessionId}
+
+### 获取所有活动的流式会话
+GET {{AstraTTS.Web_HostAddress}}/api/tts/stream/sessions
+
+### 全量语音合成
+POST {{AstraTTS.Web_HostAddress}}/api/tts/predict
+Content-Type: application/json
+
+{
+  "text": "测试全量语音合成功能"
+}
+
+### 获取音色列表
+GET {{AstraTTS.Web_HostAddress}}/api/tts/avatars
+
+### 热重载配置
+POST {{AstraTTS.Web_HostAddress}}/api/tts/reload
+

@@ -1,0 +1,113 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# IDE and editors
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Rider
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.DotSettings.user
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# NCrunch
+*.ncrunch*
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# Chutzpah
+_chutzpah*
+
+# Resharper
+_ReSharper*/
+*.DotSettings
+!*.DotSettings.user
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Linux
+*~
+
+# User config (keep template only)
+config.json
+custom_dict.txt
+
+# Model files (too large for git)
+*.onnx
+*.onnx.data
+
+# Resources (user should provide their own)
+AstraTTS.Core/models/
+AstraTTS.Core/GenieData/
+AstraTTS.Core/GenieData(Optional)/
+
+# Audio files
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.pcm
+
+# Publish results
+publish/
+venv/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp

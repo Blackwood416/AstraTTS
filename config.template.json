@@ -1,0 +1,39 @@
+{
+  "ResourcesDir": "resources",
+  "UseEngineV2": false,
+  "DefaultAvatarId": "default",
+  "RefAudioPath": "resources/avatars/default/references/normal.wav",
+  "RefText": "良宵方始，不必心急。",
+  "IntraOpNumThreads": 0,
+  "InterOpNumThreads": 0,
+  "MemoryOptimizationLevel": 1,
+  "Speed": 1.0,
+  "StreamingMode": true,
+  "StreamingChunkSize": 22,
+  "StreamingPreBufferChunks": 2,
+  "WasapiExclusiveMode": true,
+  "LockFreeBufferSize": 2097152,
+  "Avatars": [
+    {
+      "Id": "default",
+      "Name": "默认音色",
+      "Description": "默认的 TTS 音色",
+      "UseEngineV2": false,
+      "DefaultReferenceId": "normal",
+      "References": [
+        {
+          "Id": "normal",
+          "Name": "正常语调",
+          "AudioPath": "normal.wav",
+          "Text": "良宵方始，不必心急。",
+          "Language": "zh"
+        }
+      ]
+    }
+  ],
+  "G2P": {
+    "CustomDictPath": "custom_dict.txt",
+    "PriorityMode": 0,
+    "EnableNormalization": true
+  }
+}
