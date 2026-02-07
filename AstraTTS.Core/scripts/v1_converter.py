@@ -19,6 +19,49 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def load_weights(path, name="Model"):
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"❌ {name} weight file not found: {path}")
+    
+    filesize = os.path.getsize(path)
+    logger.info(f"Loading {name} weights: {os.path.basename(path)} ({filesize / 1024 / 1024:.2f} MB)...")
+    
+    if filesize == 0:
+        raise ValueError(f"❌ {name} weight file is EMPTY (0 bytes): {path}. Please check your download.")
+
+    try:
+        # Check for missing 'PK' header (common in some SoVITS formats)
+        with open(path, "rb") as f:
+            meta = f.read(2)
+            if meta != b"PK":
+                logger.warning(f"  Missing 'PK' header in {name}. Attempting to patch in-memory...")
+                data = b"PK" + f.read()
+                bio = BytesIO(data)
+                checkpoint = torch.load(bio, map_location='cpu', weights_only=False)
+            else:
+                # Try weights_only=True first (Safer for newer models)
+                try:
+                    checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+                except Exception:
+                    logger.warning(f"  Standard safe load failed for {name}, trying legacy load...")
+                    checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+    except Exception as e2:
+        if "stack underflow" in str(e2).lower() or "pickle" in str(e2).lower():
+            logger.error(f"❌ CRITICAL ERROR: Failed to unpickle {name} weights.")
+            logger.error(f"   This usually means the file is CORRUPTED or missing a valid header.")
+            logger.error(f"   Note: We attempted to auto-fix missing 'PK' headers, but it still failed.")
+        raise e2
+
+    # Handle different SoVITS save formats
+    if isinstance(checkpoint, dict):
+        if 'weight' in checkpoint:
+            return checkpoint['weight']
+        # Maybe it's a Lightning checkpoint (GPT)
+        if 'state_dict' in checkpoint:
+            return checkpoint['state_dict']
+        return checkpoint # Assume it's the raw state_dict
+    return checkpoint
+
 # ==============================================================================
 # UTILS MOCKING (Required for torch.load to unpickle SoVITS models)
 # ==============================================================================
@@ -294,8 +337,8 @@ def run_conversion(args):
     os.makedirs(args.out, exist_ok=True)
     
     logger.info("Loading PyTorch weights...")
-    gpt_weights = torch.load(args.ckpt, map_location='cpu', weights_only=True)['weight']
-    sovits_weights = torch.load(args.pth, map_location='cpu', weights_only=False)['weight']
+    gpt_weights = load_weights(args.ckpt, "GPT")
+    sovits_weights = load_weights(args.pth, "SoVITS")
     
     work_items = [
         {
@@ -344,31 +387,47 @@ def run_conversion(args):
             logger.warning(f"Shell not found: {shell_path}, skipping {item['name']}")
             continue
             
-        # 1. Base FP32 model
-        fp32_path = os.path.join(args.out, f"{item['name']}.onnx")
-        patch_and_save_embedded(shell_path, item["map"](), fp32_path, is_fp16=item["is_fp16"])
+        name = item["name"]
+        # 定义路径
+        fp32_path = os.path.join(args.out, f"{name}_fp32.onnx")
+        int8_path = os.path.join(args.out, f"{name}_int8.onnx")
+        opt_path = os.path.join(args.out, f"{name}_opt.onnx")
+        final_path = os.path.join(args.out, f"{name}.onnx")
         
+        # 1. 导出基础 FP32 模型
+        patch_and_save_embedded(shell_path, item["map"](), fp32_path, is_fp16=item["is_fp16"])
         current_path = fp32_path
         
-        # 2. Optional Simplify
-        if args.simplify:
-            sim_path = os.path.join(args.out, f"{item['name']}_opt.onnx")
-            if simplify_model(current_path, sim_path):
-                if args.clean and current_path != fp32_path: os.remove(current_path)
-                current_path = sim_path
-                shutil.copy(current_path, os.path.join(args.out, f"{item['name']}.onnx")) # Overwrite main name with optimized
-                
-        # 3. Optional Quantize
+        # 2. 可选：动态量化 (INT8) - 用户要求优先量化
         if args.quantize:
-            quant_path = os.path.join(args.out, f"{item['name']}_int8.onnx")
-            if quantize_model_dynamic(current_path, quant_path):
-                # Usually we want to keep int8 separately or as the main model
-                logger.info(f"Quantized model saved to {quant_path}")
-                if not args.simplify: # If we didn't simplify, maybe we want int8 to be the main one? 
-                    # Actually, better keep .onnx as FP32 (opt) and _int8.onnx as int8
-                    pass
+            if quantize_model_dynamic(current_path, int8_path):
+                current_path = int8_path
+            else:
+                logger.warning(f"Quantization failed for {name}, falling back to previous stage.")
+                
+        # 3. 可选：模型简化 (Simplify) - 在量化后的基础上简化效果更佳
+        if args.simplify:
+            if simplify_model(current_path, opt_path):
+                current_path = opt_path
+            else:
+                logger.warning(f"Simplification failed for {name}, falling back to previous stage.")
+        
+        # 4. 最终定稿：将最新结果命名为标准文件名
+        logger.info(f"Finalizing {name}: {os.path.basename(current_path)} -> {os.path.basename(final_path)}")
+        if os.path.exists(final_path): os.remove(final_path)
+        shutil.copy(current_path, final_path)
+                
+        # 5. 清理中间文件
+        if args.clean:
+            logger.info(f"Cleaning intermediate files for {name}...")
+            for p in [fp32_path, int8_path, opt_path]:
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {p}: {e}")
 
-    logger.info("Done!")
+    logger.info("🎉 All models processed successfully!")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AstraTTS V1 Unified Converter")

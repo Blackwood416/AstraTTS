@@ -89,6 +89,7 @@ custom_dict.txt
 
 # Resources (user should provide their own)
 AstraTTS.Core/models/
+AstraTTS.Core/resources/
 AstraTTS.Core/GenieData/
 AstraTTS.Core/GenieData(Optional)/
 
