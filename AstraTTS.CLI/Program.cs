@@ -19,7 +19,7 @@ namespace AstraTTS.CLI
         [SupportedOSPlatform("windows")]
         static async Task Main(string[] args)
         {
-            Console.WriteLine("=== AstraTTS CLI Tool ===");
+            PrintBanner();
 
             // Parse arguments
             string configPath = File.Exists("config.json") ? Path.GetFullPath("config.json") : TTSConfig.DefaultConfigPath;
@@ -67,19 +67,26 @@ namespace AstraTTS.CLI
                             break;
 
                         case "-o":
+                        case "-O":
                         case "--output":
                             if (value == null)
                             {
                                 if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) value = args[++i];
                                 else { Console.WriteLine("Error: Missing value for output flag."); ShowUsage(); return; }
                             }
-                            _outputPath = value;
+                            _outputPath = value.Trim('\"');
                             break;
 
                         case "-s":
                         case "--stream":
                             _streamingPlayback = true;
                             break;
+
+                        case "-h":
+                        case "--help":
+                        case "/?":
+                            ShowUsage();
+                            return;
 
                         default:
                             Console.WriteLine($"Error: Unknown flag '{flag}'");
@@ -151,6 +158,33 @@ namespace AstraTTS.CLI
             return $"{avatarId}_{DateTime.Now:yyyyMMdd_HHmmss}.wav";
         }
 
+        static string GetEffectiveOutputPath(string? outputPath, string avatarId)
+        {
+            if (string.IsNullOrWhiteSpace(outputPath))
+            {
+                return Path.GetFullPath(GetDefaultOutputPath(avatarId));
+            }
+
+            string path = Path.GetFullPath(outputPath.Trim('\"'));
+
+            // 如果路径是一个已存在的目录，或者是以后缀分隔符结尾（暗示是目录）
+            if (Directory.Exists(path) || path.EndsWith(Path.DirectorySeparatorChar.ToString()) || path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+            {
+                return Path.Combine(path, GetDefaultOutputPath(avatarId));
+            }
+
+            return path;
+        }
+
+        static void EnsureDirectoryExists(string filePath)
+        {
+            string? dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+        }
+
         static async Task RunOneShot(AstraTtsSdk sdk, string text)
         {
             Console.WriteLine($"Synthesizing: {text}");
@@ -165,7 +199,8 @@ namespace AstraTTS.CLI
                 var audio = await sdk.PredictAsync(text, null, _currentAvatarId, _currentReferenceId);
                 sw.Stop();
 
-                string fileName = _outputPath ?? GetDefaultOutputPath(_currentAvatarId ?? "default");
+                string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+                EnsureDirectoryExists(fileName);
                 AudioHelper.SaveWav(fileName, audio, sdk.SamplingRate);
                 Console.WriteLine($"Saved to {fileName} (Time: {sw.ElapsedMilliseconds}ms)");
             }
@@ -176,17 +211,16 @@ namespace AstraTTS.CLI
             while (true)
             {
                 Console.Write("Input > ");
-                string? input = Console.ReadLine();
+                string? input = Console.ReadLine()?.Trim();
                 if (string.IsNullOrWhiteSpace(input)) continue;
 
-                // Handle commands
                 if (input.StartsWith("/"))
                 {
+                    if (input.ToLower() == "/exit")
+                        break;
                     await HandleCommand(sdk, input);
                     continue;
                 }
-
-                if (input == "exit" || input == "q") break;
 
                 // Synthesize
                 if (_streamingPlayback)
@@ -199,7 +233,8 @@ namespace AstraTTS.CLI
                     var audio = await sdk.PredictAsync(input, null, _currentAvatarId, _currentReferenceId);
                     sw.Stop();
 
-                    string fileName = _outputPath ?? GetDefaultOutputPath(_currentAvatarId ?? "default");
+                    string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+                    EnsureDirectoryExists(fileName);
                     AudioHelper.SaveWav(fileName, audio, sdk.SamplingRate);
                     Console.WriteLine($"Done in {sw.ElapsedMilliseconds}ms. Saved to {fileName}");
                 }
@@ -310,136 +345,171 @@ namespace AstraTTS.CLI
             Console.WriteLine();
             Console.WriteLine($"✅ Streaming complete | Chunks: {chunkCount} | Time: {sw.ElapsedMilliseconds}ms");
 
-            // Optionally save to file
-            if (!string.IsNullOrEmpty(_outputPath))
-            {
-                AudioHelper.SaveWav(_outputPath, allAudio.ToArray(), sdk.SamplingRate);
-                Console.WriteLine($"Saved to {_outputPath}");
-            }
+            // 保存到文件 (流式模式也默认保存，除非用户显式关闭，目前这里保持与非流式一致的行为)
+            string savePath = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+            EnsureDirectoryExists(savePath);
+            AudioHelper.SaveWav(savePath, allAudio.ToArray(), sdk.SamplingRate);
+            Console.WriteLine($"Saved to {savePath}");
         }
 
         static async Task HandleCommand(AstraTtsSdk sdk, string input)
         {
             var parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            var command = parts[0].ToLower();
+            var rawCommand = parts[0].ToLower(); // e.g., "/out"
             var arg = parts.Length > 1 ? parts[1] : null;
 
-            switch (command)
+            // 定义所有可用指令及其处理逻辑
+            var commands = new (string Name, string Description, Func<Task> Handler)[]
             {
-                case "/reload":
+                ("/reload", "Reload configuration", async () => {
                     Console.WriteLine("Reloading configuration...");
                     var sw = Stopwatch.StartNew();
                     await sdk.ReloadConfigAsync();
                     sw.Stop();
                     Console.WriteLine($"Configuration reloaded in {sw.ElapsedMilliseconds}ms.");
                     Console.WriteLine($"Available Avatars: {sdk.Avatars.Count}");
-                    break;
-
-                case "/avatars":
-                    if (sdk.Avatars.Count == 0)
-                    {
-                        Console.WriteLine("No avatars configured.");
-                    }
-                    else
-                    {
+                }),
+                ("/avatars", "List all available avatars", async () => {
+                    if (sdk.Avatars.Count == 0) Console.WriteLine("No avatars configured.");
+                    else {
                         Console.WriteLine("Available Avatars:");
-                        foreach (var avatar in sdk.Avatars)
-                        {
+                        foreach (var avatar in sdk.Avatars) {
                             var marker = avatar.Id == _currentAvatarId ? " [*]" : "";
                             Console.WriteLine($"  - {avatar.Id}: {avatar.Name}{marker}");
-                            foreach (var r in avatar.References)
-                            {
-                                var refMarker = r.Id == _currentReferenceId ? " [*]" : "";
-                                Console.WriteLine($"      - {r.Id}: {r.Name ?? r.AudioPath}{refMarker}");
-                            }
                         }
                     }
-                    break;
-
-                case "/switch":
-                    if (string.IsNullOrEmpty(arg))
-                    {
-                        Console.WriteLine("Usage: /switch <avatarId>");
-                    }
-                    else
-                    {
+                    await Task.CompletedTask;
+                }),
+                ("/avatar", "<id> - Switch to avatar", async () => {
+                    if (string.IsNullOrEmpty(arg)) Console.WriteLine("Usage: /avatar <avatarId>");
+                    else {
                         var avatar = sdk.GetAvatar(arg);
-                        if (avatar == null)
-                        {
-                            Console.WriteLine($"Avatar '{arg}' not found.");
-                        }
-                        else
-                        {
+                        if (avatar == null) Console.WriteLine($"Avatar '{arg}' not found.");
+                        else {
                             _currentAvatarId = arg;
                             _currentReferenceId = avatar.DefaultReferenceId;
                             Console.WriteLine($"Switched to avatar: {avatar.Name} (ID: {avatar.Id})");
                         }
                     }
-                    break;
-
-                case "/ref":
-                    if (string.IsNullOrEmpty(arg))
-                    {
-                        Console.WriteLine("Usage: /ref <referenceId>");
+                    await Task.CompletedTask;
+                }),
+                ("/refs", "List references for current avatar", async () => {
+                    var avatar = sdk.GetAvatar(_currentAvatarId);
+                    if (avatar == null) {
+                        Console.WriteLine($"Current avatar '{_currentAvatarId}' not found.");
+                    } else if (avatar.References.Count == 0) {
+                        Console.WriteLine($"No references configured for avatar '{avatar.Name}'.");
+                    } else {
+                        Console.WriteLine($"References for '{avatar.Name}':");
+                        foreach (var r in avatar.References) {
+                            var marker = r.Id == _currentReferenceId ? " [*]" : "";
+                            Console.WriteLine($"  - {r.Id}: {r.Name ?? r.AudioPath}{marker}");
+                        }
                     }
-                    else
-                    {
+                    await Task.CompletedTask;
+                }),
+                ("/ref", "<id> - Switch reference audio", async () => {
+                    if (string.IsNullOrEmpty(arg)) Console.WriteLine("Usage: /ref <referenceId>");
+                    else {
                         _currentReferenceId = arg;
                         Console.WriteLine($"Reference audio set to: {arg}");
                     }
-                    break;
-
-                case "/stream":
+                    await Task.CompletedTask;
+                }),
+                ("/stream", "- Toggle streaming playback", async () => {
                     _streamingPlayback = !_streamingPlayback;
                     Console.WriteLine($"Streaming playback: {(_streamingPlayback ? "ON" : "OFF")}");
-                    break;
-
-                case "/output":
-                    if (string.IsNullOrEmpty(arg))
-                    {
+                    await Task.CompletedTask;
+                }),
+                ("/output", "<path> - Set output file path", async () => {
+                    if (string.IsNullOrEmpty(arg)) {
+                        Console.WriteLine($"Current output path: {(_outputPath ?? "(Default/Not Set)")}");
+                        Console.WriteLine("Usage: /output <path> | off | clear");
+                    } else if (arg.ToLower() is "off" or "clear" or "none" or "-") {
                         _outputPath = null;
-                        Console.WriteLine("Output path cleared. Will use default filename.");
+                        Console.WriteLine("Output path cleared. Will use default filename in current directory.");
+                    } else {
+                        _outputPath = arg.Trim('\"');
+                        string effective = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+                        Console.WriteLine($"Output path base set to: {_outputPath}");
+                        Console.WriteLine($"Example full path: {effective}");
                     }
-                    else
-                    {
-                        _outputPath = arg;
-                        Console.WriteLine($"Output path set to: {arg}");
-                    }
-                    break;
-
-                case "/help":
+                    await Task.CompletedTask;
+                }),
+                ("/help", "- Show this help", async () => {
                     Console.WriteLine("Commands:");
-                    Console.WriteLine("  /reload          - Reload configuration");
-                    Console.WriteLine("  /avatars         - List available avatars");
-                    Console.WriteLine("  /switch <id>     - Switch avatar");
-                    Console.WriteLine("  /ref <id>        - Switch reference audio");
-                    Console.WriteLine("  /stream          - Toggle streaming playback");
-                    Console.WriteLine("  /output <path>   - Set output file path");
-                    Console.WriteLine("  /help            - Show this help");
-                    Console.WriteLine("  exit | q         - Quit");
-                    break;
+                    // 这里可以直接通过变量访问
+                    await Task.CompletedTask; // 会在下面单独处理帮助输出显示
+                })
+            };
 
-                default:
-                    Console.WriteLine($"Unknown command: {command}. Type /help for available commands.");
-                    break;
+            if (rawCommand == "/help" || rawCommand == "/?")
+            {
+                ShowUsage();
+                return;
+            }
+
+            // 优先精确匹配
+            var exactMatch = commands.FirstOrDefault(c => c.Name.Equals(rawCommand, StringComparison.OrdinalIgnoreCase));
+            if (exactMatch.Name != null)
+            {
+                await exactMatch.Handler();
+                return;
+            }
+
+            // 模糊匹配 (前缀匹配)
+            var matches = commands.Where(c => c.Name.StartsWith(rawCommand, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            if (matches.Count == 0)
+            {
+                Console.WriteLine($"Unknown command: {rawCommand}. Type /help for available commands.");
+            }
+            else if (matches.Count == 1)
+            {
+                var cmd = matches[0];
+                Console.WriteLine($"[Fuzzy Match] Executing: {cmd.Name}");
+                await cmd.Handler();
+            }
+            else
+            {
+                Console.WriteLine($"Ambiguous command '{rawCommand}'. Possible matches:");
+                foreach (var m in matches)
+                {
+                    Console.WriteLine($"  {m.Name}");
+                }
             }
         }
+        static void PrintBanner()
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("========================================");
+            Console.WriteLine("       AstraTTS CLI Tool v1.0.0           ");
+            Console.WriteLine("========================================");
+            Console.ResetColor();
+        }
+
         static void ShowUsage()
         {
             Console.WriteLine("\nUsage: AstraTTS.CLI [options] [text]");
-            Console.WriteLine("\nOptions:");
-            Console.WriteLine("  -c, --config <path>  Config file path");
-            Console.WriteLine("  -O, --output <path>  Output audio file path");
-            Console.WriteLine("  -s, --stream         Enable streaming playback");
-            Console.WriteLine("  --                   Stop parsing flags and treat remaining as text");
-            Console.WriteLine("\nCommands (interactive mode):");
-            Console.WriteLine("  /reload          - Reload configuration");
-            Console.WriteLine("  /avatars         - List available avatars");
-            Console.WriteLine("  /switch <id>     - Switch avatar");
-            Console.WriteLine("  /ref <id>        - Switch reference audio");
-            Console.WriteLine("  /stream          - Toggle streaming playback");
-            Console.WriteLine("  /help            - Show this help");
-            Console.WriteLine("  exit | q         - Quit");
+
+            Console.WriteLine("\n[Options]");
+            Console.WriteLine("  -c, --config <path>  Path to config.json (Default: config.json)");
+            Console.WriteLine("  -O, --output <path>  Set output WAV file path");
+            Console.WriteLine("  -s, --stream         Enable real-time streaming playback");
+            Console.WriteLine("  -h, --help           Show this help information");
+            Console.WriteLine("  --                   Treat all following arguments as text");
+
+            Console.WriteLine("\n[Interactive Commands]");
+            Console.WriteLine("  /avatar <id>     Switch to a different voice");
+            Console.WriteLine("  /avatars         List all available voices");
+            Console.WriteLine("  /ref <id>        Switch reference audio within current voice");
+            Console.WriteLine("  /refs            List all reference audios for current voice");
+            Console.WriteLine("  /stream          Toggle streaming playback ON/OFF");
+            Console.WriteLine("  /output <path>   Change output file path");
+            Console.WriteLine("  /reload          Reload configuration and models");
+            Console.WriteLine("  /help            Show this command list");
+            Console.WriteLine("  /exit            Quit AstraTTS CLI");
+            Console.WriteLine();
         }
     }
 }

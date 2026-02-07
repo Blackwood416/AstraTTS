@@ -95,10 +95,8 @@ namespace AstraTTS.Core.Core
         public async Task<float[]> PredictAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null)
         {
             var opt = options ?? GetDefaultOptions();
-
-            // Avatar 和 Reference 处理 (待引擎支持后集成)
-            // var avatar = GetAvatar(avatarId);
-            // var reference = avatar?.GetReference(referenceId);
+            opt.AvatarId = avatarId ?? _config.DefaultAvatarId;
+            opt.ReferenceId = referenceId;
 
             return await _engine.PredictAsync(text, opt);
         }
@@ -115,6 +113,8 @@ namespace AstraTTS.Core.Core
         public IAsyncEnumerable<float[]> PredictStreamAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null, CancellationToken cancellationToken = default)
         {
             var opt = options ?? GetDefaultOptions();
+            opt.AvatarId = avatarId ?? _config.DefaultAvatarId;
+            opt.ReferenceId = referenceId;
             return _engine.PredictStreamAsync(text, opt, cancellationToken);
         }
 

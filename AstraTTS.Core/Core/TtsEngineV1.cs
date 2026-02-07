@@ -36,6 +36,11 @@ namespace AstraTTS.Core.Core
 
         private TTSConfig? _config;
 
+        // 音色切换状态追踪
+        private string? _currentAvatarId;
+        private string? _currentReferenceId;
+        private readonly object _referenceLock = new();
+
         public int SamplingRate => 32000;
 
         public async Task LoadAsync(TTSConfig config)
@@ -75,19 +80,32 @@ namespace AstraTTS.Core.Core
         }
 
 
-        private void PrepareReference()
+        private void PrepareReference() => PrepareReference(null, null);
+
+        private void PrepareReference(string? avatarId, string? referenceId)
         {
             if (_config == null) return;
 
-            // 优先使用 Avatar 系统
+            // 解析目标音色
+            avatarId ??= _config.DefaultAvatarId;
+            var avatar = _config.Avatars.Find(a => a.Id == avatarId);
+
             string refPath;
             string refText;
 
-            var avatarRef = _config.GetDefaultReferenceAudio();
-            if (avatarRef.HasValue)
+            if (avatar != null)
             {
-                refPath = avatarRef.Value.audioPath;
-                refText = avatarRef.Value.text;
+                var reference = avatar.GetReference(referenceId);
+                if (reference != null)
+                {
+                    refPath = reference.GetFullAudioPath(_config.AvatarsDir, avatarId);
+                    refText = reference.Text;
+                }
+                else
+                {
+                    Console.WriteLine($"警告: 音色 '{avatarId}' 下找不到参考音频 '{referenceId}'。");
+                    return;
+                }
             }
             else if (!string.IsNullOrEmpty(_config.RefAudioPath))
             {
@@ -137,6 +155,9 @@ namespace AstraTTS.Core.Core
 
         public async Task<float[]> PredictAsync(string text, TtsOptions options)
         {
+            // 检测音色切换
+            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
+
             var (res, bertFeat) = ProcessFrontendOptimal(text);
             try
             {
@@ -166,6 +187,45 @@ namespace AstraTTS.Core.Core
             }
         }
 
+        /// <summary>
+        /// 检查当前加载的音色是否与请求匹配，如不匹配则重新加载。
+        /// </summary>
+        private void EnsureReferenceLoaded(string? avatarId, string? referenceId)
+        {
+            if (_config == null) return;
+
+            // 如果未指定，使用默认值
+            avatarId ??= _config.DefaultAvatarId;
+
+            // 查找 Avatar
+            var avatar = _config.Avatars.Find(a => a.Id == avatarId);
+            if (avatar == null)
+            {
+                Console.WriteLine($"警告: 找不到音色 '{avatarId}'，保持使用当前音色。");
+                return;
+            }
+
+            // 查找 Reference
+            var reference = avatar.GetReference(referenceId);
+            string effectiveRefId = reference?.Id ?? "default";
+
+            // 检查是否需要重新加载
+            if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId)
+                return;
+
+            lock (_referenceLock)
+            {
+                // 双重检查
+                if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId)
+                    return;
+
+                Console.WriteLine($"🔄 切换音色: {avatarId}/{effectiveRefId}");
+                PrepareReference(avatarId, referenceId);
+                _currentAvatarId = avatarId;
+                _currentReferenceId = effectiveRefId;
+            }
+        }
+
         internal class SentenceContext
         {
             public string Text { get; set; } = string.Empty;
@@ -176,6 +236,9 @@ namespace AstraTTS.Core.Core
 
         public async IAsyncEnumerable<float[]> PredictStreamAsync(string text, TtsOptions options, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            // 检测音色切换
+            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
+
             string normalized = LanguageDetector.NormalizePunctuation(text);
             normalized = EnglishTextNormalizer.Normalize(normalized);
 

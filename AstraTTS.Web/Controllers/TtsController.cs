@@ -247,7 +247,56 @@ namespace AstraTTS.Web.Controllers
         [HttpGet("avatars")]
         public IActionResult GetAvatars()
         {
-            return Ok(_sdk.Avatars.Select(a => new { a.Id, a.Name, a.Description, References = a.References.Select(r => new { r.Id, r.Name }) }));
+            return Ok(_sdk.Avatars.Select(a => new { a.Id, a.Name, a.Description, ReferenceCount = a.References.Count }));
+        }
+
+        /// <summary>
+        /// 获取指定音色的详细信息，包括所有参考音频。
+        /// </summary>
+        /// <param name="avatarId">音色 ID</param>
+        [HttpGet("avatars/{avatarId}")]
+        public IActionResult GetAvatar(string avatarId)
+        {
+            var avatar = _sdk.GetAvatar(avatarId);
+            if (avatar == null)
+                return NotFound(new { error = $"Avatar '{avatarId}' not found." });
+
+            return Ok(new
+            {
+                avatar.Id,
+                avatar.Name,
+                avatar.Description,
+                avatar.DefaultReferenceId,
+                References = avatar.References.Select(r => new
+                {
+                    r.Id,
+                    r.Name,
+                    r.Text,
+                    r.Language,
+                    r.AudioPath
+                })
+            });
+        }
+
+        /// <summary>
+        /// 获取指定音色的所有参考音频。
+        /// </summary>
+        /// <param name="avatarId">音色 ID</param>
+        [HttpGet("avatars/{avatarId}/refs")]
+        public IActionResult GetAvatarReferences(string avatarId)
+        {
+            var avatar = _sdk.GetAvatar(avatarId);
+            if (avatar == null)
+                return NotFound(new { error = $"Avatar '{avatarId}' not found." });
+
+            return Ok(avatar.References.Select(r => new
+            {
+                r.Id,
+                r.Name,
+                r.Text,
+                r.Language,
+                r.AudioPath
+            }));
         }
 
         /// <summary>

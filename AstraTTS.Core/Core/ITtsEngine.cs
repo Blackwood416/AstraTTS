@@ -74,6 +74,16 @@ namespace AstraTTS.Core.Core
         public int StreamingChunkTokens { get; set; } = 24;
 
         /// <summary>
+        /// 请求的音色 ID（可选）。如果设置，引擎会在推理前切换到该音色。
+        /// </summary>
+        public string? AvatarId { get; set; }
+
+        /// <summary>
+        /// 请求的参考音频 ID（可选）。如果设置，引擎会使用该参考音频。
+        /// </summary>
+        public string? ReferenceId { get; set; }
+
+        /// <summary>
         /// 默认配置。
         /// </summary>
         public static TtsOptions Default => new TtsOptions();
