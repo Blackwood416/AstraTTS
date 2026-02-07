@@ -135,19 +135,7 @@ namespace AstraTTS.CLI
             }
             else
             {
-                Console.WriteLine("\nUsage: AstraTTS.CLI [options] [text]");
-                Console.WriteLine("\nOptions:");
-                Console.WriteLine("  -c, --config <path>  Config file path");
-                Console.WriteLine("  -O, --output <path>  Output audio file path");
-                Console.WriteLine("  -s, --stream         Enable streaming playback");
-                Console.WriteLine("\nCommands:");
-                Console.WriteLine("  /reload          - Reload configuration");
-                Console.WriteLine("  /avatars         - List available avatars");
-                Console.WriteLine("  /switch <id>     - Switch avatar");
-                Console.WriteLine("  /ref <id>        - Switch reference audio");
-                Console.WriteLine("  /stream          - Toggle streaming playback");
-                Console.WriteLine("  /help            - Show this help");
-                Console.WriteLine("  exit | q         - Quit");
+                ShowUsage();
                 Console.WriteLine("\nEntering interactive mode...\n");
                 await RunInteractive(sdk);
             }
