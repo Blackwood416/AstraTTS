@@ -5,7 +5,7 @@ $Runtime = "win-x64" # 可以根据需要修改，例如 win-arm64
 
 if (Test-Path $PublishDir) {
     Write-Host "正在清理旧的发布目录..." -ForegroundColor Cyan
-    Remove-Item -Recursive -Path $PublishDir -Force -Recurse
+    Remove-Item -Path $PublishDir -Force -Recurse
 }
 
 Write-Host "🚀 开始发布 AstraTTS.Web (astra-server)..." -ForegroundColor Green
