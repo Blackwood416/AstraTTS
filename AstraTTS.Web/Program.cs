@@ -78,7 +78,6 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-app.UseStaticFiles();
 app.MapOpenApi();
 app.MapScalarApiReference(); // Mapping Scalar at /scalar
 app.MapControllers();
