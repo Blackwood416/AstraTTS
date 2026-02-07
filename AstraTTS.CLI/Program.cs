@@ -155,12 +155,23 @@ namespace AstraTTS.CLI
 
             string path = Path.GetFullPath(outputPath.Trim('\"'));
 
-            // 如果路径是一个已存在的目录，或者是以后缀分隔符结尾（暗示是目录）
-            if (Directory.Exists(path) || path.EndsWith(Path.DirectorySeparatorChar.ToString()) || path.EndsWith(Path.AltDirectorySeparatorChar.ToString()))
+            // 智能判断是目录还是文件：
+            // 1. 已经是一个存在的目录
+            // 2. 路径以分隔符结尾 (e.g. "out/")
+            // 3. 路径没有扩展名 (e.g. "results" -> 视为目录)
+            bool isExplicitDir = Directory.Exists(path) ||
+                                 path.EndsWith(Path.DirectorySeparatorChar.ToString()) ||
+                                 path.EndsWith(Path.AltDirectorySeparatorChar.ToString());
+
+            bool hasExtension = Path.HasExtension(path);
+
+            if (isExplicitDir || !hasExtension)
             {
+                // 视为目录，拼接带时间戳的文件名
                 return Path.Combine(path, GetDefaultOutputPath(avatarId));
             }
 
+            // 视为具体文件名
             return path;
         }
 
@@ -482,7 +493,7 @@ namespace AstraTTS.CLI
 
             Console.WriteLine("\n[Options]");
             Console.WriteLine("  -c, --config <path>  Path to config.json (Default: config.json)");
-            Console.WriteLine("  -O, --output <path>  Set output WAV file path");
+            Console.WriteLine("  -O, --output <path>  Output file or directory path");
             Console.WriteLine("  -s, --stream         Enable real-time streaming playback");
             Console.WriteLine("  -h, --help           Show this help information");
             Console.WriteLine("  --                   Treat all following arguments as text");
@@ -493,7 +504,7 @@ namespace AstraTTS.CLI
             Console.WriteLine("  /ref <id>        Switch reference audio within current voice");
             Console.WriteLine("  /refs            List all reference audios for current voice");
             Console.WriteLine("  /stream          Toggle streaming playback ON/OFF");
-            Console.WriteLine("  /output <path>   Change output file path");
+            Console.WriteLine("  /output <path>   Change output file or directory");
             Console.WriteLine("  /reload          Reload configuration and models");
             Console.WriteLine("  /help            Show this command list");
             Console.WriteLine("  /exit            Quit AstraTTS CLI");
