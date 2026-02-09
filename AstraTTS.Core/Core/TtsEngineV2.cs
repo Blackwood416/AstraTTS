@@ -21,6 +21,7 @@ namespace AstraTTS.Core.Core
         private RobertaFeatureExtractor? _bert;
         private ChineseG2P? _chineseG2p;
         private EnglishG2P? _englishG2p;
+        private JapaneseG2P? _japaneseG2p;
         private MixedLanguageG2P? _mixedG2p;
 
         private long[] _refPhoneIds = Array.Empty<long>();
@@ -67,14 +68,22 @@ namespace AstraTTS.Core.Core
                             _bert = new RobertaFeatureExtractor(config.BertModelPath, config.TokenizerJsonPath);
                     },
                     () => _chineseG2p = new ChineseG2P(config.ChineseG2PDict, config.PinyinDict, config.CustomDictFullPath),
-                    () => _englishG2p = new EnglishG2P(config.CmuDict, config.NeuralG2PModel, config.CustomDictFullPath)
+                    () => _englishG2p = new EnglishG2P(config.CmuDict, config.NeuralG2PModel, config.CustomDictFullPath),
+                    () =>
+                    {
+                        // 日语 G2P (可选 - 词典目录存在时加载)
+                        if (Directory.Exists(config.JapaneseDictDir))
+                        {
+                            _japaneseG2p = new JapaneseG2P(config.JapaneseDictDir);
+                        }
+                    }
                 );
             });
 
             if (_chineseG2p == null || _englishG2p == null)
                 throw new Exception("G2P 核心初始化失败");
 
-            _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p);
+            _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p);
 
             // 预处理参考音频
             await Task.Run(PrepareReference);
@@ -231,6 +240,12 @@ namespace AstraTTS.Core.Core
             {
                 res = _englishG2p!.Process(normalized);
                 bertFeat = new float[res.PhoneIds.Length, 1024];
+            }
+            else if (mode == LanguageDetector.LanguageMode.Japanese)
+            {
+                // 日语通过 MixedLanguageG2P 路由到 JapaneseG2P
+                res = _mixedG2p!.Process(normalized);
+                bertFeat = new float[res.PhoneIds.Length, 1024]; // 日语不使用 BERT
             }
             else
             {

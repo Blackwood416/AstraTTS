@@ -61,16 +61,41 @@ AstraTTS 支持两个版本的推理引擎。目前 **V1 为推荐使用的稳�
 
 #### 📂 模型与资源目录
 
-资源主要存放于 `resources` 目录下：
+资源建议存放于程序同级的 `resources` 目录下，层级结构如下：
 
-- **V1 模型 (`resources/models_v1/default/`)**: 包含 `tts/`, `bert/`, `hubert/`, `speaker_encoder.onnx`。
-- **V2 模型 (`resources/models_v2/default/`)**: 实验性 GPT-SoVITS 模型。
-- **共享资源 (`resources/shared/`)**:
-  - `dictionaries/cmudict.dict`: 英文发音词典。
-  - `dictionaries/mandarin_pinyin.dict`: 中文拼音词典。
-  - `dictionaries/opencpop-strict.txt`: 中文 G2P 核心词典。
-  - `g2p/checkpoint20.npz`: 英文 Neural G2P 模型。
-  - `custom_dict.txt`: 用户自定义词典（支持热更新）。
+```text
+resources/
+├── models_v1/                   # V1 引擎模型 (基于 Genie-TTS)
+│   └── {avatarId}/              # 音色子目录 (如 default)
+│       ├── speaker_encoder.onnx # 声纹特征提取模型
+│       ├── bert/                # 文本前端 RoBERTa 模型
+│       │   ├── roberta.onnx
+│       │   └── tokenizer/       # 分词器资源 (json, vocab.txt)
+│       ├── hubert/              # 音频前端 Hubert 模型
+│       │   └── chinese-hubert-base_full.onnx
+│       └── tts/                 # VITS 核心指令推理模型
+│           ├── vits.onnx        # 核心合成网络
+│           ├── prompt_encoder.onnx
+│           ├── t2s_encoder.onnx
+│           ├── t2s_first_stage_decoder.onnx
+│           └── t2s_stage_decoder.onnx
+├── models_v2/                   # V2 引擎模型 (基于 GPT-SoVITS-minimal-inference)
+│   └── {avatarId}/              # 音色子目录 (如 default)
+│       ├── sovits.onnx / gpt_encoder.onnx / gpt_step.onnx
+│       └── bert.onnx / ssl.onnx / vq_encoder.onnx / config.json
+├── shared/                      # 多引擎共享资源
+│   ├── dictionaries/            # G2P 发音词典库
+│   │   ├── cmudict.dict         # 英文 ARPAbet
+│   │   ├── mandarin_pinyin.dict # 中文拼音
+│   │   └── opencpop-strict.txt  # 核心音素字典
+│   ├── g2p/                     # Neural G2P 神经网络模型 (npz)
+│   │   └── checkpoint20.npz
+│   └── custom_dict.txt          # 用户自定义词典 (支持热更新)
+└── avatars/                     # 用户音色与参考素材库
+    └── {avatarId}/              # 音色标识目录
+        └── references/          # 该音色的参考文件列表 (WAV)
+            └── ... 
+```
 
 ---
 
@@ -78,7 +103,9 @@ AstraTTS 支持两个版本的推理引擎。目前 **V1 为推荐使用的稳�
 
 1. **下载并解压** 整合包。
 2. **启动 WebAPI**: 运行 `astra-server.exe`。默认在 `http://localhost:5000` 运行。
+   - 如需暴露到局域网，可添加参数：`astra-server.exe --urls "http://*:5000"`
 3. **本地测试**: 运行 `astra-cli.exe` 进入交互模式。
+
 4. **自定义配置**: 修改 `config.json` 即可即时生效。
 
 ---
@@ -139,6 +166,7 @@ dotnet run --project AstraTTS.Web
   
   "StreamingMode": true,            // 是否启用流式合成
   "StreamingChunkSize": 22,         // 流式触发所需的最小音素数 (仅 V1)
+  "StreamingPreBufferChunks": 2,    // 播放前预缓冲的分块数 (减少播放卡顿)
   
   "WasapiExclusiveMode": true,      // (CLI) 是否启用 WASAPI 独占模式播放
   
@@ -169,4 +197,5 @@ MIT License
 - [GPT-SoVITS Minimal Inference](https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference) - V2 C# 推理实现参考。
 - [ONNX Runtime](https://onnxruntime.ai/) - 高性能跨平台推理后端。
 - [NAudio](https://github.com/naudio/NAudio) - .NET 音频处理。
+- [wasapi_relink](https://github.com/Litttlefish/wasapi_relink) - WASAPI 低延迟优化辅助组件。
 - [BreakingBad (AI-Hobbyist)](https://www.ai-hobbyist.com/thread-1143-1-1.html) - 整合包内置默认模型来源。

@@ -100,6 +100,13 @@ AstraTTS.Core/GenieData(Optional)/
 *.ogg
 *.pcm
 
+# Dictionary files
+*.txt
+*.dict
+
+# Resource files
+resources/
+
 # Publish results
 publish/
 venv/

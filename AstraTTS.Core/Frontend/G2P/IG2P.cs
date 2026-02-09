@@ -9,6 +9,7 @@ namespace AstraTTS.Core.Frontend.G2P
     {
         Chinese,
         English,
+        Japanese,
         Other  // SP, 标点等
     }
 
@@ -35,13 +36,13 @@ namespace AstraTTS.Core.Frontend.G2P
         public List<string> Phones;
         public long[] PhoneIds;
         public int[] Word2Ph;
-        
+
         /// <summary>
         /// 每个音素对应的语言标记，用于分段 BERT 处理。
         /// 长度与 Phones 相同。
         /// </summary>
         public PhoneLanguage[]? LanguageTags;
-        
+
         /// <summary>
         /// 语言片段列表，包含每个片段的文本和位置信息。
         /// 用于分段 BERT 处理。

@@ -14,7 +14,8 @@ namespace AstraTTS.Core.Frontend.TextNorm
         {
             Chinese,  // 纯中文
             English,  // 纯英文
-            Mixed     // 中英混合
+            Mixed,    // 中英混合
+            Japanese  // 包含日语假名
         }
 
         /// <summary>
@@ -26,11 +27,22 @@ namespace AstraTTS.Core.Frontend.TextNorm
 
             bool hasChinese = false;
             bool hasEnglish = false;
+            bool hasJapanese = false;
 
             foreach (char c in text)
             {
+                // 日语平假名 (U+3040-U+309F)
+                if (c >= 0x3040 && c <= 0x309F)
+                {
+                    hasJapanese = true;
+                }
+                // 日语片假名 (U+30A0-U+30FF)
+                else if (c >= 0x30A0 && c <= 0x30FF)
+                {
+                    hasJapanese = true;
+                }
                 // 中文字符 (CJK Unified Ideographs + Extension A)
-                if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF))
+                else if ((c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x3400 && c <= 0x4DBF))
                 {
                     hasChinese = true;
                 }
@@ -40,11 +52,12 @@ namespace AstraTTS.Core.Frontend.TextNorm
                     hasEnglish = true;
                 }
                 // 其他字符（数字、标点等）不参与判断
-
-                // 提前退出
-                if (hasChinese && hasEnglish) return LanguageMode.Mixed;
             }
 
+            // 日语优先级最高（包含假名即视为日语）
+            if (hasJapanese) return LanguageMode.Japanese;
+
+            if (hasChinese && hasEnglish) return LanguageMode.Mixed;
             if (hasChinese && !hasEnglish) return LanguageMode.Chinese;
             if (hasEnglish && !hasChinese) return LanguageMode.English;
 

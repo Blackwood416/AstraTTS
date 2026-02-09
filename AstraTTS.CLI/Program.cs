@@ -103,6 +103,10 @@ namespace AstraTTS.CLI
             Console.WriteLine($"Loading config from: {configPath}");
             var config = TTSConfig.LoadOrCreate(configPath);
 
+            // 如果命令行未强制开启 (-s)，则遵循配置文件
+            if (!_streamingPlayback)
+                _streamingPlayback = config.StreamingMode;
+
             // 尝试启用低延迟模式
             try
             {

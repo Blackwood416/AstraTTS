@@ -113,6 +113,12 @@ namespace AstraTTS.Core.Config
         [JsonIgnore]
         public string NeuralG2PModel => Path.Combine(SharedDir, "g2p", "checkpoint20.npz");
 
+        /// <summary>
+        /// 日语 OpenJTalk 词典目录
+        /// </summary>
+        [JsonIgnore]
+        public string JapaneseDictDir => Path.Combine(SharedDir, "g2p", "JapaneseG2P", "open_jtalk_dic_utf_8-1.11");
+
         // ============================================================
         // 音色 (Avatar) 配置
         // ============================================================

@@ -8,30 +8,44 @@ using AstraTTS.Core.Core;
 namespace AstraTTS.Core.Frontend.G2P
 {
     /// <summary>
-    /// 混合语言 G2P 处理器，自动检测中英文片段并路由到对应的 G2P。
+    /// 混合语言 G2P 处理器，自动检测中英日文片段并路由到对应的 G2P。
     /// </summary>
     public class MixedLanguageG2P : IG2P
     {
         private readonly ChineseG2P _chineseG2P;
         private readonly EnglishG2P _englishG2P;
+        private readonly JapaneseG2P? _japaneseG2P;
 
-        public MixedLanguageG2P(ChineseG2P chineseG2P, EnglishG2P englishG2P)
+        public MixedLanguageG2P(ChineseG2P chineseG2P, EnglishG2P englishG2P, JapaneseG2P? japaneseG2P = null)
         {
             _chineseG2P = chineseG2P;
             _englishG2P = englishG2P;
+            _japaneseG2P = japaneseG2P;
         }
 
         /// <summary>
-        /// 处理混合语言文本。
+        /// 处理混合语言文本（自动检测语言）。
         /// </summary>
-        public G2PResult Process(string text)
+        public G2PResult Process(string text) => Process(text, null);
+
+        /// <summary>
+        /// 处理文本，可选择显式指定语言。
+        /// </summary>
+        /// <param name="text">要处理的文本</param>
+        /// <param name="explicitLanguage">显式语言代码 (zh, en, jp/ja)，null 表示自动检测</param>
+        public G2PResult Process(string text, string? explicitLanguage)
         {
+            // 如果指定了日语，将所有汉字视为日语处理
+            // 如果未指定语言但文本包含假名，也将汉字视为日语（上下文感知）
+            bool forceJapanese = IsJapaneseLanguageCode(explicitLanguage)
+                                 || (explicitLanguage == null && ContainsJapaneseKana(text));
+
             // 0. 先进行英文特殊符号规范化 (C# -> C sharp, .NET -> dot net 等)
             // 这样在分割语言时，特殊符号已经被转换为普通文本
             text = TextNorm.EnglishTextNormalizer.Normalize(text);
 
-            // 1. 分割文本为中英文片段
-            var segments = SplitByLanguage(text);
+            // 1. 分割文本为语言片段
+            var segments = SplitByLanguage(text, forceJapanese);
 
             List<string> allPhones = new List<string>();
             List<int> allWord2Ph = new List<int>();
@@ -56,16 +70,39 @@ namespace AstraTTS.Core.Frontend.G2P
                 }
                 else if (lang == Language.English)
                 {
-                    // 仅在 中文->英文 过渡时添加 SP
-                    if (prevLang == Language.Chinese)
+                    // 仅在 中文/日文->英文 过渡时添加 SP
+                    if (prevLang == Language.Chinese || prevLang == Language.Japanese)
                     {
                         allPhones.Add("SP");
                         allWord2Ph.Add(1);
-                        languageTags.Add(PhoneLanguage.Other);  // SP 标记为 Other
+                        languageTags.Add(PhoneLanguage.Other);
                     }
                     result = _englishG2P.Process(segment);
                     phoneLang = PhoneLanguage.English;
                     prevLang = Language.English;
+                }
+                else if (lang == Language.Japanese)
+                {
+                    // 日语处理
+                    if (_japaneseG2P == null)
+                    {
+                        // 回退到中文 G2P（汉字部分可能有效）
+                        result = _chineseG2P.Process(segment);
+                        phoneLang = PhoneLanguage.Chinese;
+                    }
+                    else
+                    {
+                        // 语言过渡时添加 SP
+                        if (prevLang.HasValue && prevLang != Language.Japanese)
+                        {
+                            allPhones.Add("SP");
+                            allWord2Ph.Add(1);
+                            languageTags.Add(PhoneLanguage.Other);
+                        }
+                        result = _japaneseG2P.Process(segment);
+                        phoneLang = PhoneLanguage.Japanese;
+                    }
+                    prevLang = Language.Japanese;
                 }
                 else
                 {
@@ -148,12 +185,24 @@ namespace AstraTTS.Core.Frontend.G2P
             };
         }
 
-        private enum Language { Chinese, English, Other }
+        private enum Language { Chinese, English, Japanese, Other }
+
+        /// <summary>
+        /// 检测语言代码是否为日语。
+        /// </summary>
+        private static bool IsJapaneseLanguageCode(string? langCode)
+        {
+            if (string.IsNullOrEmpty(langCode)) return false;
+            var code = langCode.ToLowerInvariant();
+            return code == "jp" || code == "ja" || code == "jpn" || code == "japanese";
+        }
 
         /// <summary>
         /// 将文本分割为语言片段。
         /// </summary>
-        private List<(string segment, Language lang)> SplitByLanguage(string text)
+        /// <param name="text">要分割的文本</param>
+        /// <param name="forceJapanese">如果为 true，将所有 CJK 汉字视为日语</param>
+        private List<(string segment, Language lang)> SplitByLanguage(string text, bool forceJapanese = false)
         {
             var result = new List<(string, Language)>();
             var currentSegment = new StringBuilder();
@@ -161,7 +210,7 @@ namespace AstraTTS.Core.Frontend.G2P
 
             foreach (char c in text)
             {
-                Language charLang = DetectCharLanguage(c);
+                Language charLang = DetectCharLanguage(c, forceJapanese);
 
                 if (currentLang == null)
                 {
@@ -194,19 +243,56 @@ namespace AstraTTS.Core.Frontend.G2P
 
             return result;
         }
+        /// <summary>
+        /// 检测文本中是否包含日语假名（平假名或片假名）。
+        /// 保留方法供将来使用。
+        /// </summary>
+        private bool ContainsJapaneseKana(string text)
+        {
+            foreach (char c in text)
+            {
+                // 平假名 (3040-309F)
+                if (c >= 0x3040 && c <= 0x309F) return true;
+                // 片假名 (30A0-30FF)
+                if (c >= 0x30A0 && c <= 0x30FF) return true;
+                // 片假名扩展 (31F0-31FF)
+                if (c >= 0x31F0 && c <= 0x31FF) return true;
+            }
+            return false;
+        }
 
         /// <summary>
         /// 检测单个字符的语言。
         /// </summary>
-        private Language DetectCharLanguage(char c)
+        /// <param name="c">要检测的字符</param>
+        /// <param name="forceJapanese">如果为 true，将 CJK 汉字视为日语</param>
+        private Language DetectCharLanguage(char c, bool forceJapanese = false)
         {
-            // 中文字符范围 (CJK Unified Ideographs)
-            if (c >= 0x4E00 && c <= 0x9FFF) return Language.Chinese;
-            // CJK Extension A
-            if (c >= 0x3400 && c <= 0x4DBF) return Language.Chinese;
+            // 日语平假名 (3040-309F)
+            if (c >= 0x3040 && c <= 0x309F) return Language.Japanese;
+            // 日语片假名 (30A0-30FF)
+            if (c >= 0x30A0 && c <= 0x30FF) return Language.Japanese;
+            // 日语片假名扩展 (31F0-31FF)
+            if (c >= 0x31F0 && c <= 0x31FF) return Language.Japanese;
+            // 日语长音符号
+            if (c == 0x30FC) return Language.Japanese;
 
-            // 数字和小数点 - 归类为中文，让 ChineseTextNormalizer 处理
-            if ((c >= '0' && c <= '9') || c == '.') return Language.Chinese;
+            // CJK 汉字范围 - 根据 forceJapanese 决定语言
+            if (c >= 0x4E00 && c <= 0x9FFF)
+            {
+                return forceJapanese ? Language.Japanese : Language.Chinese;
+            }
+            // CJK Extension A
+            if (c >= 0x3400 && c <= 0x4DBF)
+            {
+                return forceJapanese ? Language.Japanese : Language.Chinese;
+            }
+
+            // 数字和小数点 - 根据 forceJapanese 决定
+            if ((c >= '0' && c <= '9') || c == '.')
+            {
+                return forceJapanese ? Language.Japanese : Language.Chinese;
+            }
 
             // ASCII 字母
             if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) return Language.English;

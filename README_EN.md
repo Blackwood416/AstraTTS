@@ -61,16 +61,41 @@ AstraTTS supports two inference engines. **V1 is currently the recommended stabl
 
 #### 📂 Models & Resources
 
-Resources are mainly located in the `resources` directory:
+Resources are suggested to be placed in the `resources` directory in the same folder as the program:
 
-- **V1 Models (`resources/models_v1/default/`)**: Contains `tts/`, `bert/`, `hubert/`, and `speaker_encoder.onnx`.
-- **V2 Models (`resources/models_v2/default/`)**: Experimental GPT-SoVITS models.
-- **Shared Resources (`resources/shared/`)**:
-  - `dictionaries/cmudict.dict`: English pronunciation dictionary.
-  - `dictionaries/mandarin_pinyin.dict`: Chinese Pinyin dictionary.
-  - `dictionaries/opencpop-strict.txt`: Chinese G2P core dictionary.
-  - `g2p/checkpoint20.npz`: English Neural G2P model.
-  - `custom_dict.txt`: User-defined custom dictionary (supports hot reload).
+```text
+resources/
+├── models_v1/                   # V1 Engines (Based on Genie-TTS)
+│   └── {avatarId}/              # Voice subdirectories (e.g., default)
+│       ├── speaker_encoder.onnx # Voiceprint feature extraction
+│       ├── bert/                # Frontend RoBERTa model
+│       │   ├── roberta.onnx
+│       │   └── tokenizer/       # Tokenizer resources (json, vocab.txt)
+│       ├── hubert/              # Frontend Hubert model
+│       │   └── chinese-hubert-base_full.onnx
+│       └── tts/                 # VITS core inference models
+│           ├── vits.onnx        # Core synthesis network
+│           ├── prompt_encoder.onnx
+│           ├── t2s_encoder.onnx
+│           ├── t2s_first_stage_decoder.onnx
+│           └── t2s_stage_decoder.onnx
+├── models_v2/                   # V2 Engines (Based on GPT-SoVITS-minimal-inference)
+│   └── {avatarId}/              # Voice subdirectories
+│       ├── sovits.onnx / gpt_encoder.onnx / gpt_step.onnx
+│       └── bert.onnx / ssl.onnx / vq_encoder.onnx / config.json
+├── shared/                      # Multi-engine shared resources
+│   ├── dictionaries/            # G2P pronunciation dictionaries
+│   │   ├── cmudict.dict         # English ARPAbet
+│   │   ├── mandarin_pinyin.dict # Chinese Pinyin
+│   │   └── opencpop-strict.txt  # Core phoneme dictionary
+│   ├── g2p/                     # Neural G2P models (npz)
+│   │   └── checkpoint20.npz
+│   └── custom_dict.txt          # User-defined custom dictionary (Hot reload)
+└── avatars/                     # User voices and reference audios
+    └── {avatarId}/              # Voice ID directory
+        └── references/          # Reference audio list (WAV)
+            └── ... 
+```
 
 ---
 
@@ -78,8 +103,10 @@ Resources are mainly located in the `resources` directory:
 
 1. **Download and Extract** the integration package.
 2. **Start WebAPI**: Run `astra-server.exe`. It runs at `http://localhost:5000` by default.
+   - To expose to LAN, add parameter: `astra-server.exe --urls "http://*:5000"`
 3. **Local Testing**: Run `astra-cli.exe` to enter interactive mode.
 4. **Custom Config**: Simply edit `config.json` for live updates.
+
 
 ---
 
@@ -139,6 +166,7 @@ The following guide is based on the **V1 Engine** configuration:
   
   "StreamingMode": true,            // Enable streaming synthesis
   "StreamingChunkSize": 22,         // Min tokens for stream trigger (V1 Only)
+  "StreamingPreBufferChunks": 2,    // Pre-buffer chunks before playback (Reduces stuttering)
   
   "WasapiExclusiveMode": true,      // (CLI) WASAPI exclusive mode for playback
   
@@ -169,4 +197,5 @@ MIT License
 - [GPT-SoVITS Minimal Inference](https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference) - C# inference reference for V2.
 - [ONNX Runtime](https://onnxruntime.ai/) - High-performance cross-platform backend.
 - [NAudio](https://github.com/naudio/NAudio) - .NET Audio processing.
+- [wasapi_relink](https://github.com/Litttlefish/wasapi_relink) - WASAPI low-latency helper component.
 - [BreakingBad (AI-Hobbyist)](https://www.ai-hobbyist.com/thread-1143-1-1.html) - Source of original models in integration pack.
