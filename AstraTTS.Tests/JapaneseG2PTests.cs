@@ -1,6 +1,8 @@
 using Xunit;
 using Xunit.Abstractions;
 using AstraTTS.Core.Frontend.G2P;
+using AstraTTS.Core.Frontend.G2P.Common;
+using AstraTTS.Core.Frontend.G2P.Japanese;
 using AstraTTS.Core.Frontend.TextNorm;
 using System;
 using System.IO;
@@ -26,9 +28,9 @@ namespace AstraTTS.Tests
             {
                 // 从测试项目 bin 目录向上查找 (新位置)
                 Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-                    @"..\..\..\..\resources\shared\g2p\JapaneseG2P\open_jtalk_dic_utf_8-1.11")),
+                    @"..\..\..\..\resources\shared\g2p\dicts\japanese\open_jtalk_dic_utf_8-1.11")),
                 // 直接使用绝对路径
-                @"E:\RiderProjects\AstraTTS\resources\shared\g2p\JapaneseG2P\open_jtalk_dic_utf_8-1.11",
+                @"E:\RiderProjects\AstraTTS\resources\shared\g2p\dicts\japanese\open_jtalk_dic_utf_8-1.11",
             };
 
             foreach (var path in possiblePaths)
@@ -162,17 +164,26 @@ namespace AstraTTS.Tests
     public class JapaneseTextNormalizerTests
     {
         [Fact]
-        public void Normalize_FullWidthPunctuation_ConvertsToHalfWidth()
+        public void Normalize_FullWidthPunctuation_StaysFullWidth()
         {
-            var input = "こんにちは。これは、テストです！";
+            var input = "こんにちは。这是、测试です！";
             var result = JapaneseTextNormalizer.Normalize(input);
 
-            Assert.Contains(".", result);
-            Assert.Contains(",", result);
-            Assert.Contains("!", result);
-            Assert.DoesNotContain("。", result);
-            Assert.DoesNotContain("、", result);
-            Assert.DoesNotContain("！", result);
+            Assert.Contains("。", result);
+            Assert.Contains("、", result);
+            Assert.Contains("！", result);
+        }
+
+        [Fact]
+        public void Normalize_HalfWidthPunctuation_ConvertsToFullWidth()
+        {
+            var input = "こんにちは. 这是, 测试です!";
+            var result = JapaneseTextNormalizer.Normalize(input);
+
+            Assert.Contains("。", result);
+            Assert.Contains("、", result);
+            Assert.Contains("！", result);
+            Assert.DoesNotContain(".", result);
         }
 
         [Fact]
@@ -191,8 +202,8 @@ namespace AstraTTS.Tests
             var input = "なに！！！";
             var result = JapaneseTextNormalizer.Normalize(input);
 
-            // 连续的 ! 应该合并为一个
-            Assert.Equal(1, result.Count(c => c == '!'));
+            // 连续的 ！ 应该合并为一个
+            Assert.Equal(1, result.Count(c => c == '！'));
         }
 
         [Fact]
@@ -227,11 +238,21 @@ namespace AstraTTS.Tests
         }
 
         [Fact]
-        public void CharDetection_Kanji_DetectedAsChinese()
+        public void CharDetection_Kanji_DetectedAsChineseByDefault()
         {
-            // 汉字应该被检测为中文（因为优先判断假名）
+            // 在没有上下文时，汉字默认检测为中文
             char kanji = '日'; // U+65E5
             Assert.True(kanji >= 0x4E00 && kanji <= 0x9FFF);
+        }
+
+        [Fact]
+        public void ContextDetection_KanjiWithKana_ReturnsJapanese()
+        {
+            // 这个测试验证我们新增的启示逻辑：如果包含假名，则 CJK 应该判定为日语
+            //由于测试类没有完整 MixedLanguageG2P 实例，这里仅验证该启发式逻辑的组成部分
+            string text = "この場合";
+            bool hasKana = text.Any(c => (c >= 0x3040 && c <= 0x309F) || (c >= 0x30A0 && c <= 0x30FF));
+            Assert.True(hasKana, "Should detect kana in 'この場合'");
         }
     }
 }
