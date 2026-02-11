@@ -7,13 +7,13 @@ using System.Text;
 using System.Text.RegularExpressions;
 using NumSharp;
 
-namespace AstraTTS.Core.Frontend.G2P
+namespace AstraTTS.Core.Frontend.G2P.English
 {
     /// <summary>
     /// 基于神经网络的 G2P 转换器，用于处理 OOV (未登录) 词汇。
     /// 使用 GRU 编码器-解码器架构，从 checkpoint20.npz 加载预训练权重。
     /// </summary>
-    public class NeuralG2P
+    public class EnglishNeuralG2P
     {
         // 字母表 (graphemes)
         private static readonly string[] Graphemes = {
@@ -55,7 +55,7 @@ namespace AstraTTS.Core.Frontend.G2P
 
         private bool _isLoaded = false;
 
-        public NeuralG2P()
+        public EnglishNeuralG2P()
         {
             // 构建字母到索引映射
             _g2idx = new Dictionary<char, int>();
@@ -87,14 +87,14 @@ namespace AstraTTS.Core.Frontend.G2P
         {
             if (!File.Exists(npzPath))
             {
-                Console.WriteLine($"[NeuralG2P] Model file not found: {npzPath}");
+                Console.WriteLine($"[EnglishNeuralG2P] Model file not found: {npzPath}");
                 return;
             }
 
             try
             {
-                Console.WriteLine($"[NeuralG2P] Loading model from {npzPath}...");
-                
+                Console.WriteLine($"[EnglishNeuralG2P] Loading model from {npzPath}...");
+
                 using (var archive = ZipFile.OpenRead(npzPath))
                 {
                     _encEmb = LoadNpy(archive, "enc_emb.npy");
@@ -102,13 +102,13 @@ namespace AstraTTS.Core.Frontend.G2P
                     _encWHh = LoadNpy(archive, "enc_w_hh.npy");
                     _encBIh = LoadNpy(archive, "enc_b_ih.npy");
                     _encBHh = LoadNpy(archive, "enc_b_hh.npy");
-                    
+
                     _decEmb = LoadNpy(archive, "dec_emb.npy");
                     _decWIh = LoadNpy(archive, "dec_w_ih.npy");
                     _decWHh = LoadNpy(archive, "dec_w_hh.npy");
                     _decBIh = LoadNpy(archive, "dec_b_ih.npy");
                     _decBHh = LoadNpy(archive, "dec_b_hh.npy");
-                    
+
                     _fcW = LoadNpy(archive, "fc_w.npy");
                     _fcB = LoadNpy(archive, "fc_b.npy");
                 }
@@ -116,12 +116,12 @@ namespace AstraTTS.Core.Frontend.G2P
                 _isLoaded = true;
                 if (!object.ReferenceEquals(_encEmb, null))
                 {
-                    Console.WriteLine($"[NeuralG2P] Model loaded successfully. Encoder embedding shape: {string.Join(",", _encEmb.shape)}");
+                    Console.WriteLine($"[EnglishNeuralG2P] Model loaded successfully. Encoder embedding shape: {string.Join(",", _encEmb.shape)}");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[NeuralG2P] Failed to load model: {ex.Message}");
+                Console.WriteLine($"[EnglishNeuralG2P] Failed to load model: {ex.Message}");
                 Console.WriteLine(ex.StackTrace);
                 _isLoaded = false;
             }
@@ -130,9 +130,9 @@ namespace AstraTTS.Core.Frontend.G2P
         private NDArray? LoadNpy(ZipArchive archive, string entryName)
         {
             var entry = archive.GetEntry(entryName);
-            if (entry == null) 
+            if (entry == null)
             {
-                Console.WriteLine($"[NeuralG2P] Warning: Entry {entryName} not found in NPZ.");
+                Console.WriteLine($"[EnglishNeuralG2P] Warning: Entry {entryName} not found in NPZ.");
                 return null;
             }
 
@@ -141,47 +141,47 @@ namespace AstraTTS.Core.Frontend.G2P
             {
                 stream.CopyTo(ms);
                 ms.Position = 0;
-                
+
                 // NPY Header Parsing
                 // 1. Magic string (6 bytes): \x93NUMPY
                 byte[] magic = new byte[6];
                 ms.Read(magic, 0, 6);
-                
+
                 // 2. Version (2 bytes)
                 byte[] version = new byte[2];
                 ms.Read(version, 0, 2);
-                
+
                 // 3. Header len (2 bytes, Little Endian)
                 byte[] headerLenBytes = new byte[2];
                 ms.Read(headerLenBytes, 0, 2);
                 int headerLen = BitConverter.ToUInt16(headerLenBytes, 0);
-                
+
                 // 4. Header dict string
                 byte[] headerBytes = new byte[headerLen];
                 ms.Read(headerBytes, 0, headerLen);
                 string headerStr = Encoding.ASCII.GetString(headerBytes).Trim();
-                
+
                 // Parse Shape and Dtype
                 // example: {'descr': '<f4', 'fortran_order': False, 'shape': (29, 256), }
                 var shapeMatch = Regex.Match(headerStr, @"'shape': \((.*?)\)");
                 if (!shapeMatch.Success)
                 {
-                    Console.WriteLine($"[NeuralG2P] Error: Failed to parse shape from header: {headerStr}");
+                    Console.WriteLine($"[EnglishNeuralG2P] Error: Failed to parse shape from header: {headerStr}");
                     return null;
                 }
                 var shapeStrs = shapeMatch.Groups[1].Value.Split(',', StringSplitOptions.RemoveEmptyEntries);
                 var shape = shapeStrs.Select(s => int.Parse(s.Trim())).ToArray();
-                
+
                 // Read Data
                 int totalElements = shape.Aggregate(1, (a, b) => a * b);
                 int bytesToRead = totalElements * 4; // float32 = 4 bytes
-                
+
                 byte[] dataBytes = new byte[bytesToRead];
                 ms.Read(dataBytes, 0, bytesToRead);
-                
+
                 float[] data = new float[totalElements];
                 Buffer.BlockCopy(dataBytes, 0, data, 0, bytesToRead);
-                
+
                 var nd = np.array(data);
                 return nd.reshape(shape);
             }
@@ -199,61 +199,63 @@ namespace AstraTTS.Core.Frontend.G2P
             {
                 // 1. 编码输入
                 var enc = Encode(word);
-                
+
                 // 2. 运行 GRU 编码器
                 int hiddenSize = _encWHh!.shape[1];
                 var h = np.zeros(1, hiddenSize);
-                
+
                 for (int t = 0; t < enc.shape[1]; t++)
                 {
                     var xt = enc[$":, {t}, :"];
                     h = GRUCell(xt, h, _encWIh!, _encWHh!, _encBIh!, _encBHh!);
                 }
-                
+
                 // 3. 解码
                 var preds = new List<int>();
-                
+
                 // dec = dec_emb[sos_idx]
                 // Note: NumSharp slicing syntax is tricky, explicit buffer copy is safer
                 var decEmbData = _decEmb!.GetData<float>().ToArray();
                 int embDim = _decEmb.shape[1];
                 float[] startEmb = new float[embDim];
                 Array.Copy(decEmbData, _sosIdx * embDim, startEmb, 0, embDim);
-                
+
                 var dec = np.array(startEmb).reshape(1, embDim);
-                
+
                 for (int step = 0; step < 20; step++)  // Max 20 steps
                 {
                     h = GRUCell(dec, h, _decWIh!, _decWHh!, _decBIh!, _decBHh!);
-                    
+
                     // 线性层
                     var logits = np.matmul(h, _fcW!.T) + _fcB!;
-                    
+
                     // Argmax
                     var logitsData = logits.GetData<float>().ToArray();
                     int predIdx = 0;
                     float maxVal = float.MinValue;
-                    for(int i=0; i<logitsData.Length; i++) {
-                        if(logitsData[i] > maxVal) {
+                    for (int i = 0; i < logitsData.Length; i++)
+                    {
+                        if (logitsData[i] > maxVal)
+                        {
                             maxVal = logitsData[i];
                             predIdx = i;
                         }
                     }
-                    
+
                     if (predIdx == _eosPhIdx) break;
                     preds.Add(predIdx);
-                    
+
                     // 下一步输入
                     Array.Copy(decEmbData, predIdx * embDim, startEmb, 0, embDim);
                     dec = np.array(startEmb).reshape(1, embDim);
                 }
-                
+
                 // 4. 转换为音素
                 return preds.Select(idx => _idx2p.GetValueOrDefault(idx, "<unk>")).ToList();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[NeuralG2P] Prediction error: {ex.Message}");
+                Console.WriteLine($"[EnglishNeuralG2P] Prediction error: {ex.Message}");
                 return new List<string>();
             }
         }
@@ -265,27 +267,27 @@ namespace AstraTTS.Core.Frontend.G2P
         {
             var chars = word.ToLower().ToCharArray().ToList();
             var indices = new List<int>();
-            
+
             foreach (var c in chars)
             {
                 indices.Add(_g2idx.GetValueOrDefault(c, _unkIdx));
             }
             indices.Add(_eosIdx);  // 添加 </s>
-            
+
             // 查找嵌入
             int seqLen = indices.Count;
             int embDim = _encEmb!.shape[1];
-            
+
             // Manual lookup
             var embData = _encEmb.GetData<float>().ToArray();
             var resultData = new float[seqLen * embDim];
-            
+
             for (int i = 0; i < seqLen; i++)
             {
                 int idx = indices[i];
                 Array.Copy(embData, idx * embDim, resultData, i * embDim, embDim);
             }
-            
+
             return np.array(resultData).reshape(1, seqLen, embDim);
         }
 
@@ -298,39 +300,39 @@ namespace AstraTTS.Core.Frontend.G2P
             var rznIh = np.matmul(x, wIh.T) + bIh;
             // rzn_hh = h @ w_hh.T + b_hh
             var rznHh = np.matmul(h, wHh.T) + bHh;
-            
+
             int hiddenSize = wHh.shape[1];
-            
+
             var rznIhData = rznIh.GetData<float>().ToArray();
             var rznHhData = rznHh.GetData<float>().ToArray();
-            
+
             float[] rData = new float[hiddenSize];
             float[] zData = new float[hiddenSize];
             float[] nData = new float[hiddenSize];
-            
+
             for (int i = 0; i < hiddenSize; i++)
             {
                 float rInput = rznIhData[i] + rznHhData[i];
                 float zInput = rznIhData[i + hiddenSize] + rznHhData[i + hiddenSize];
-                
+
                 rData[i] = Sigmoid(rInput);
                 zData[i] = Sigmoid(zInput);
             }
-            
+
             for (int i = 0; i < hiddenSize; i++)
             {
                 float nInput = rznIhData[i + 2 * hiddenSize] + rData[i] * rznHhData[i + 2 * hiddenSize];
                 nData[i] = (float)Math.Tanh(nInput);
             }
-            
+
             float[] hNewData = new float[hiddenSize];
             var hData = h.GetData<float>().ToArray();
-            
+
             for (int i = 0; i < hiddenSize; i++)
             {
                 hNewData[i] = (1 - zData[i]) * nData[i] + zData[i] * hData[i];
             }
-            
+
             return np.array(hNewData).reshape(1, hiddenSize);
         }
 
@@ -338,24 +340,7 @@ namespace AstraTTS.Core.Frontend.G2P
         {
             return 1.0f / (1.0f + (float)Math.Exp(-x));
         }
-        
-        // NDArray Sigmoid implementation removed, using element-wise loop in GRUCell
 
-        /// <summary>
-        /// 测试神经网络 G2P。
-        /// </summary>
-        public static void Test(string modelPath)
-        {
-            var neuralG2p = new NeuralG2P();
-            neuralG2p.LoadModel(modelPath);
-            
-            var testWords = new[] { "hello", "world", "python", "feature", "neural", "A", "E" };
-            
-            foreach (var word in testWords)
-            {
-                var phonemes = neuralG2p.Predict(word);
-                Console.WriteLine($"[NeuralG2P Test] {word} -> {string.Join(" ", phonemes)}");
-            }
-        }
+        // NDArray Sigmoid implementation removed, using element-wise loop in GRUCell
     }
 }

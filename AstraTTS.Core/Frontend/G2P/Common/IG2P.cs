@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace AstraTTS.Core.Frontend.G2P
+namespace AstraTTS.Core.Frontend.G2P.Common
 {
     /// <summary>
     /// 音素对应的语言类型

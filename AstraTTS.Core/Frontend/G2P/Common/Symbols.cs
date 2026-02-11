@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace AstraTTS.Core.Frontend.G2P
+namespace AstraTTS.Core.Frontend.G2P.Common
 {
     public static class Symbols
     {
