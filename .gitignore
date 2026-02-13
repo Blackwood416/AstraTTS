@@ -7,6 +7,7 @@ out/
 .idea/
 .vs/
 .vscode/
+.agent/
 *.suo
 *.user
 *.userosscache
@@ -81,6 +82,8 @@ $RECYCLE.BIN/
 
 # User config (keep template only)
 config.json
+config.yaml
+config.yml
 custom_dict.txt
 
 # Model files (too large for git)
@@ -106,6 +109,9 @@ AstraTTS.Core/GenieData(Optional)/
 
 # Resource files
 resources/
+
+# Tools files
+tools/
 
 # Publish results
 publish/

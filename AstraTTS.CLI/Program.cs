@@ -14,18 +14,25 @@ namespace AstraTTS.CLI
         private static string? _currentReferenceId;
         private static string? _outputPath;
         private static bool _streamingPlayback;
+        private static int? _priorityMode;
         private static WasapiLowLatencyHelper? _latencyHelper;
 
         [SupportedOSPlatform("windows")]
         static async Task Main(string[] args)
         {
+            // Set console encoding to UTF-8 to support Chinese and Japanese input/output
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
             PrintBanner();
 
             // Parse arguments
-            string configPath = File.Exists("config.json") ? Path.GetFullPath("config.json") : TTSConfig.DefaultConfigPath;
+            string? configPath = null;
+            bool? forceDebug = null;
             List<string> remainingArgs = new List<string>();
             bool stopParsingFlags = false;
 
+            List<string>? langsOverride = null;
             for (int i = 0; i < args.Length; i++)
             {
                 string arg = args[i];
@@ -82,11 +89,35 @@ namespace AstraTTS.CLI
                             _streamingPlayback = true;
                             break;
 
+                        case "-p":
+                        case "--priority":
+                            if (value == null)
+                            {
+                                if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) value = args[++i];
+                                else { Console.WriteLine("Error: Missing value for priority flag."); ShowUsage(); return; }
+                            }
+                            if (int.TryParse(value, out int p)) _priorityMode = p;
+                            break;
+
                         case "-h":
                         case "--help":
                         case "/?":
                             ShowUsage();
                             return;
+
+                        case "-L":
+                        case "--langs":
+                            if (value == null)
+                            {
+                                if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) value = args[++i];
+                                else { Console.WriteLine("Error: Missing value for langs flag."); ShowUsage(); return; }
+                            }
+                            langsOverride = value.Split(',').Select(s => s.Trim()).ToList();
+                            break;
+
+                        case "--debug":
+                            forceDebug = true;
+                            break;
 
                         default:
                             Console.WriteLine($"Error: Unknown flag '{flag}'");
@@ -100,8 +131,10 @@ namespace AstraTTS.CLI
                 }
             }
 
-            Console.WriteLine($"Loading config from: {configPath}");
-            var config = TTSConfig.LoadOrCreate(configPath);
+            var config = configPath != null ? TTSConfig.LoadOrCreate(configPath) : TTSConfig.Load();
+            if (forceDebug.HasValue) config.DebugMode = forceDebug.Value;
+            if (langsOverride != null) config.G2P.Languages = langsOverride;
+            Console.WriteLine($"Loading config from: {TTSConfig.LoadedPath}");
 
             // 如果命令行未强制开启 (-s)，则遵循配置文件
             if (!_streamingPlayback)
@@ -190,22 +223,32 @@ namespace AstraTTS.CLI
 
         static async Task RunOneShot(AstraTtsSdk sdk, string text)
         {
-            Console.WriteLine($"Synthesizing: {text}");
-
-            if (_streamingPlayback)
+            try
             {
-                await RunStreamingPlayback(sdk, text);
+                Console.WriteLine($"Synthesizing: {text}");
+
+                if (_streamingPlayback)
+                {
+                    await RunStreamingPlayback(sdk, text);
+                }
+                else
+                {
+                    var sw = Stopwatch.StartNew();
+                    var options = new TtsOptions { G2PPriorityMode = _priorityMode };
+                    var result = await sdk.PredictAsync(text, options, _currentAvatarId, _currentReferenceId);
+                    sw.Stop();
+
+                    string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+                    EnsureDirectoryExists(fileName);
+                    AudioHelper.SaveWav(fileName, result.Audio, sdk.SamplingRate);
+                    Console.WriteLine($"Saved to {fileName} (Time: {sw.ElapsedMilliseconds}ms)");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                var sw = Stopwatch.StartNew();
-                var audio = await sdk.PredictAsync(text, null, _currentAvatarId, _currentReferenceId);
-                sw.Stop();
-
-                string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
-                EnsureDirectoryExists(fileName);
-                AudioHelper.SaveWav(fileName, audio, sdk.SamplingRate);
-                Console.WriteLine($"Saved to {fileName} (Time: {sw.ElapsedMilliseconds}ms)");
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\n[Error] Synthesis failed: {ex.Message}");
+                Console.ResetColor();
             }
         }
 
@@ -226,20 +269,30 @@ namespace AstraTTS.CLI
                 }
 
                 // Synthesize
-                if (_streamingPlayback)
+                try
                 {
-                    await RunStreamingPlayback(sdk, input);
-                }
-                else
-                {
-                    var sw = Stopwatch.StartNew();
-                    var audio = await sdk.PredictAsync(input, null, _currentAvatarId, _currentReferenceId);
-                    sw.Stop();
+                    if (_streamingPlayback)
+                    {
+                        await RunStreamingPlayback(sdk, input);
+                    }
+                    else
+                    {
+                        var sw = Stopwatch.StartNew();
+                        var options = new TtsOptions { G2PPriorityMode = _priorityMode };
+                        var result = await sdk.PredictAsync(input, options, _currentAvatarId, _currentReferenceId);
+                        sw.Stop();
 
-                    string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
-                    EnsureDirectoryExists(fileName);
-                    AudioHelper.SaveWav(fileName, audio, sdk.SamplingRate);
-                    Console.WriteLine($"Done in {sw.ElapsedMilliseconds}ms. Saved to {fileName}");
+                        string fileName = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
+                        EnsureDirectoryExists(fileName);
+                        AudioHelper.SaveWav(fileName, result.Audio, sdk.SamplingRate);
+                        Console.WriteLine($"Done in {sw.ElapsedMilliseconds}ms. Saved to {fileName}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine($"\n[Error] {ex.Message}");
+                    Console.ResetColor();
                 }
             }
         }
@@ -281,13 +334,14 @@ namespace AstraTTS.CLI
             waveOut.Init(audioSource);
 
             using var pipeline = new AudioPipeline(sdk.SamplingRate, 20, 20);
+            var options = new TtsOptions { G2PPriorityMode = _priorityMode };
 
             int chunkCount = 0;
             bool playbackStarted = false;
             int preBufferChunks = sdk.Config.StreamingPreBufferChunks;
             var allAudio = new List<float>();
 
-            await foreach (var chunk in sdk.PredictStreamAsync(text, options: null, avatarId: _currentAvatarId, referenceId: _currentReferenceId))
+            await foreach (var chunk in sdk.PredictStreamAsync(text, options, avatarId: _currentAvatarId, referenceId: _currentReferenceId))
             {
                 chunkCount++;
                 int samples = chunk.Length;
@@ -369,7 +423,13 @@ namespace AstraTTS.CLI
                     var sw = Stopwatch.StartNew();
                     await sdk.ReloadConfigAsync();
                     sw.Stop();
+                    // Sync CLI state with new config
+                    _currentAvatarId = sdk.Config.DefaultAvatarId;
+                    var avatar = sdk.GetAvatar(_currentAvatarId);
+                    _currentReferenceId = avatar?.DefaultReferenceId;
+
                     Console.WriteLine($"Configuration reloaded in {sw.ElapsedMilliseconds}ms.");
+                    Console.WriteLine($"Current Avatar: {_currentAvatarId} (Synced)");
                     Console.WriteLine($"Available Avatars: {sdk.Avatars.Count}");
                 }),
                 ("/avatars", "List all available avatars", async () => {
@@ -439,6 +499,33 @@ namespace AstraTTS.CLI
                     }
                     await Task.CompletedTask;
                 }),
+                ("/priority", "<mode> - Set G2P priority (0=DictFirst, 1=DictOnly, 2=ModelFirst)", async () => {
+                    if (string.IsNullOrEmpty(arg)) {
+                        Console.WriteLine($"Current G2P Priority: {(_priorityMode?.ToString() ?? "Default (0)")}");
+                        Console.WriteLine("Usage: /priority <0|1|2|default>");
+                    } else if (arg.ToLower() == "default" || arg == "-1") {
+                        _priorityMode = null;
+                        Console.WriteLine("G2P Priority set to: Default (from config)");
+                    } else if (int.TryParse(arg, out int p)) {
+                        _priorityMode = p;
+                        sdk.Config.G2P.PriorityMode = p; // 同步到 SDK 配置以便 Apply 时一致
+                        await sdk.ApplyConfigAsync();
+                        Console.WriteLine($"G2P Priority set to: {p}");
+                    }
+                    await Task.CompletedTask;
+                }),
+                ("/langs", "<l1,l2> - Set allowed languages (zh, en, ja)", async () => {
+                    if (string.IsNullOrEmpty(arg)) {
+                        Console.WriteLine($"Current Allowed Languages: {string.Join(", ", sdk.Config.G2P.Languages)}");
+                        Console.WriteLine("Usage: /langs zh,en | zh,ja | en");
+                    } else {
+                        var newLangs = arg.Split(',').Select(s => s.Trim()).ToList();
+                        sdk.Config.G2P.Languages = newLangs;
+                        await sdk.ApplyConfigAsync(); // 重载以应用语言约束重选 MixedLanguageG2P
+                        Console.WriteLine($"Allowed Languages set to: {string.Join(", ", newLangs)}");
+                    }
+                    await Task.CompletedTask;
+                }),
                 ("/help", "- Show this help", async () => {
                     Console.WriteLine("Commands:");
                     // 这里可以直接通过变量访问
@@ -496,9 +583,12 @@ namespace AstraTTS.CLI
             Console.WriteLine("\nUsage: AstraTTS.CLI [options] [text]");
 
             Console.WriteLine("\n[Options]");
-            Console.WriteLine("  -c, --config <path>  Path to config.json (Default: config.json)");
+            Console.WriteLine("  -c, --config <path>  Path to config.yaml (Default: config.yaml)");
             Console.WriteLine("  -O, --output <path>  Output file or directory path");
             Console.WriteLine("  -s, --stream         Enable real-time streaming playback");
+            Console.WriteLine("  -p, --priority <0|1|2> G2P priority mode (0=DictFirst, 1=DictOnly, 2=ModelFirst)");
+            Console.WriteLine("  -L, --langs <l1[,l2]>  Allowed languages (comma separated, e.g. zh,en)");
+            Console.WriteLine("  --debug              Enable detailed debug logging");
             Console.WriteLine("  -h, --help           Show this help information");
             Console.WriteLine("  --                   Treat all following arguments as text");
 
@@ -509,6 +599,8 @@ namespace AstraTTS.CLI
             Console.WriteLine("  /refs            List all reference audios for current voice");
             Console.WriteLine("  /stream          Toggle streaming playback ON/OFF");
             Console.WriteLine("  /output <path>   Change output file or directory");
+            Console.WriteLine("  /priority <0|1|2> Change G2P priority mode");
+            Console.WriteLine("  /langs <l1[,l2]>   Change allowed languages (comma separated, e.g. zh,en)");
             Console.WriteLine("  /reload          Reload configuration and models");
             Console.WriteLine("  /help            Show this command list");
             Console.WriteLine("  /exit            Quit AstraTTS CLI");

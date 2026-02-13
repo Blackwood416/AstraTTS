@@ -10,6 +10,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>astra-cli</AssemblyName>
+    <AssemblyVersion>1.1.1</AssemblyVersion>
+    <Version>1.1.1</Version>
   </PropertyGroup>
 
 </Project>

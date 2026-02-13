@@ -1,0 +1,70 @@
+# AstraTTS 配置文件模板
+# ============================================================
+# 请根据实际需要修改后保存为 config.yaml
+
+# 资源根目录：存放核心模型(models_v1)、语种词典(dicts)等资源
+ResourcesDir: ".\\resources"
+
+# 默认使用的 Avatar ID
+DefaultAvatarId: chenxing
+
+# --- 角色列表定义 ---
+Avatars:
+- Id: chenxing                     # 角色唯一标识
+  Name: 晨星                 # 在 WebUI 显示的名称
+  Description: '尘白禁区中晨星的音色' # 角色简介
+  DefaultReferenceId: default    # 默认使用的参考音频 ID
+  References:                    # 参考音频配置（用于克隆音色或控制风格）
+  - Id: default
+    Name: 【正常】良宵方始，不必心急。
+    AudioPath: "【正常】良宵方始，不必心急。.wav"
+    Text: "良宵方始，不必心急。"
+    Language: zh                 # 参考音频的语言 (zh/en/ja)
+
+# 全局引擎设置：false 使用AstraTTS V1系列模型
+UseEngineV2: false
+
+# --- ONNX Runtime 性能与并行配置 ---
+# IntraOpNumThreads: 算子内部并行线程数。建议设为物理核心数(如 4, 8, 16)，0 代表自动
+IntraOpNumThreads: 0
+# InterOpNumThreads: 算子间并行线程数。TTS 链式结构建议设为 1，0 代表自动
+InterOpNumThreads: 0
+# GraphOptimizationLevel: 图优化级别 (0=禁用, 1=基础, 2=全部)。
+GraphOptimizationLevel: 1
+
+# 推理会话池容量：支持的最大并发合成请求数
+PoolCapacity: 1
+# 是否复用内存：开启后不同会话将共享模型实例以节省内存
+ReuseMemory: true
+
+# --- 合成参数默认值 ---
+Speed: 1.0                       # 语速控制 (0.5 - 2.0)
+StreamingMode: true              # CLI是否默认开启流式播放反馈
+StreamingChunkSize: 22           # 流式合成的 Token 分块大小（越小延迟越低，但 CPU 压力越大）
+StreamingPreBufferChunks: 2      # 音频预缓冲块数（减少生成卡顿）
+
+# WASAPI 独占模式（仅影响本地 CLI/Windows 服务直接输出，不影响 Web 流传输）
+WasapiExclusiveMode: false
+# 播放音频环形缓冲区大小 (字节)
+LockFreeBufferSize: 2097152
+
+# 调试模式：开启后控制台会详细输出引擎日志
+DebugMode: false
+
+# --- 推理质量控制 (幻听过滤与自动重试机制) ---
+Inference:
+  MaxRetries: 3                  # 单句推理失败（检测到幻听/截断）后的最大自动重试次数
+  # 各语言的推理长度系数（阈值），越高越容易触发重试
+  MinTokenMultiplierChinese: 2.0
+  MinTokenMultiplierJapanese: 1.7
+  MinTokenMultiplierEnglish: 1.3
+  MinTokenMultiplierOther: 0.5   # 标点和其他符号的重试系数
+
+# --- 语种与 G2P (文本转音素) 配置 ---
+G2P:
+  # 自定义词典：位于 ResourcesDir/dicts 下的文件名
+  CustomDictPath: custom_dict.txt
+  # 英文G2P优先级：0-词典优先，1-仅词典，2-模型优先
+  PriorityMode: 0
+  # 允许检测和放行的语言列表（三选二）：["zh", "en", "ja"]
+  Languages: ["zh", "ja"]

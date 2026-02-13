@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>🎙️ High-Performance Cross-Platform TTS (Text-to-Speech) Engine</strong>
+  <strong>🎙️ High-Performance Windows-Only TTS (Text-to-Speech) Engine</strong>
 </p>
 
 <p align="center">
-  A high-quality speech synthesis solution based on ONNX Runtime, supporting streaming output, multi-voice management, and low-latency playback.
+  A high-performance speech synthesis solution based on ONNX Runtime, supporting streaming output, concurrent inference, and multi-voice management.
 </p>
 
 <p align="center">
@@ -18,173 +18,129 @@
 
 ---
 
-## 🚀 Stable Releases (Recommended)
+## 📢 New Version v1.1.1 Beta Released!
 
-If you don't want to configure the build environment, you can directly download our pre-built **Portable Package**:
+AstraTTS has received a major update, introducing Japanese support and a comprehensive Web-based management interface.
 
-👉 **[Download Latest Stable Release](https://github.com/Blackwood416/AstraTTS/releases/latest)**
-
-> [!TIP]
-> The portable package comes with all necessary runtimes and the V1 default voice. Just extract and follow the [Portable Package Usage](#-portable-package-usage) below.
+### ✨ New Features & Improvements
+- 🇯🇵 **Japanese Support** - Integrated OpenJTalk-based Japanese G2P system, supporting dynamic mixed synthesis (Current version supports dual-language mixing e.g., ZH-JA/ZH-EN, triple-language mix is not yet supported).
+- 🖥️ **All-New WebUI** - Access it at `http://localhost:5000` after starting `astra-server.exe`:
+  - **Voice Management**: Visual editing and batch reference audio management (direct upload supported).
+  - **Config Editor**: Online modification of global parameters with hot-reload support.
+  - **Interactive Debugging**: Real-time synthesis tests and performance stress testing.
+  - **Model Converter**: Integrated conversion logic optimized for **GPT-SoVITS V2ProPlus** architectures.
+- ⚖️ **Concurrency Enhancement** - Introduced an **Inference Engine Pool** to handle multiple simultaneous requests efficiently using multi-core CPUs, configurable via `PoolCapacity`.
+- 🧠 **G2P System Refactored** - Completely rewritten Graphene-to-Phoneme engine for significantly faster processing and improved polyphone accuracy.
+- 📝 **YAML Configuration Support** - Standardized on YAML format (`config.yaml`).
+  - **Readability**: Full comment support provided in `config.template.yaml` for all parameters.
+- 📂 **Directory Structure Optimization** - Flattened the `models_v1` hierarchy, removing redundant subfolders for more efficient asset loading.
+- 🔍 **Streamlined API Docs** - Optimized the built-in Scalar API page, hiding internal endpoints for a cleaner developer experience.
 
 ---
 
 ## ✨ Features
 
-- 🚀 **High-Performance** - Powered by ONNX Runtime, deeply optimized for CPU inference.
-- 🎵 **Streaming Synthesis** - Real-time audio streaming with extremely low first-chunk latency.
-- 🎭 **Voice Management** - Supports custom voice banks and reference audio configurations.
-- 🔧 **Flexible Deployment** - Interactive CLI tool and standard Web API service provided.
-- 🌐 **Mixed Language** - Built-in Chinese-English G2P system for natural mixed-language synthesis.
-- 🔄 **Hot Reload** - Dynamically reload configurations without stopping the service.
+- 🚀 **High-Performance** - Powered by ONNX Runtime and optimized for CPU instruction sets, far exceeding traditional Python-based inference.
+- ⚖️ **High Concurrency** - Built-in inference pool design allows simultaneous processing of multiple synthesis requests.
+- 🎵 **Streaming Synthesis** - Millisecond-level first-chunk latency with "play-while-synthesizing" support.
+- 🎭 **Visual Management** - Powerful WebUI dashboard for voice bank management, model conversion, and parameter tuning.
+- 🔧 **Flexible Deployment** - Ideal for both lightweight CLI use and distributed Web API services.
+- 🌐 **Mixed-Language Synthesis** - Robust support for ZH-EN and ZH-JA bilingual mixing (trilingual mix is still in development).
+- 🔄 **Hot Reload** - Configuration changes take effect immediately without service interruption.
 
 ## 📦 Project Structure
 
-- **AstraTTS.Core**: The core SDK containing inference engines, text processing (G2P/TextNorm), and audio utilities.
-- **AstraTTS.CLI**: A command-line interactive tool for one-shot synthesis and real-time streaming tests.
-- **AstraTTS.Web**: An ASP.NET Core based web service providing RESTful APIs and a simple documentation interface.
+- **AstraTTS.Core**: Core SDK containing hybrid G2P engines, RoBERTa/Hubert extractors, and high-performance inference modules.
+- **AstraTTS.CLI**: Windows-exclusive command-line tool with low-latency WASAPI playback.
+- **AstraTTS.Web**: Backend Web service providing RESTful APIs and the management dashboard.
 
 ---
 
 ## 🔧 Engine Versions
 
-AstraTTS supports two inference engines. **V1 is currently the recommended stable version.**
+AstraTTS uses **V1 Engine (Recommended)** by default. V2 remains experimental.
 
 | Feature | V1 Engine (Recommended) | V2 Engine (Experimental) |
 | :--- | :--- | :--- |
-| **Origin** | Based on [Genie-TTS](https://github.com/High-Logic/Genie-TTS) | Based on [GPT-SoVITS-Minimal](https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference) |
-| **Status** | ✅ Stable, Production Ready | 🚧 WIP, Experimental |
-| **Acceleration** | CPU Only (Optimized) | CPU Only (GPU WIP) |
-| **Speed Control** | ✅ Supported (`Speed`) | ✅ Supported (`Speed`) |
-| **Sampling Params** | ❌ Not Supported | ✅ Supported (`TopK`, `Temperature`) |
-| **Noise Scale** | ❌ Not Supported | ✅ Supported (`NoiseScale`) |
+| **Origin** | Based on [Genie-TTS](https://github.com/High-Logic/Genie-TTS) | Based on [GPT-SoVITS-Minimal](https://github.com/GPT-SoVITS_minimal) |
+| **Status** | ✅ Stable, supports **V2ProPlus** cloning | 🚧 WIP, Experimental |
+| **Language Mix** | ✅ ZH-JA / ZH-EN (Bilingual Only) | ⚠️ ZH-EN Only |
+| **Sampling** | ❌ Deterministic (No TopK/Temp) | ✅ TopK / Temp / NoiseScale |
+| **Concurrency** | ✅ Supported (Inference Pool) | ✅ Supported |
 
 #### 📂 Models & Resources
 
-Resources are suggested to be placed in the `resources` directory in the same folder as the program:
+Resource structure for version 1.1.x+:
 
 ```text
 resources/
-├── models_v1/                   # V1 Engines (Based on Genie-TTS)
-│   └── {avatarId}/              # Voice subdirectories (e.g., default)
-│       ├── speaker_encoder.onnx # Voiceprint feature extraction
-│       ├── bert/                # Frontend RoBERTa model
-│       │   ├── roberta.onnx
-│       │   └── tokenizer/       # Tokenizer resources (json, vocab.txt)
-│       ├── hubert/              # Frontend Hubert model
-│       │   └── chinese-hubert-base_full.onnx
-│       └── tts/                 # VITS core inference models
-│           ├── vits.onnx        # Core synthesis network
-│           ├── prompt_encoder.onnx
-│           ├── t2s_encoder.onnx
-│           ├── t2s_first_stage_decoder.onnx
-│           └── t2s_stage_decoder.onnx
-├── models_v2/                   # V2 Engines (Based on GPT-SoVITS-minimal-inference)
-│   └── {avatarId}/              # Voice subdirectories
-│       ├── sovits.onnx / gpt_encoder.onnx / gpt_step.onnx
-│       └── bert.onnx / ssl.onnx / vq_encoder.onnx / config.json
-├── shared/                      # Multi-engine shared resources
-│   ├── dictionaries/            # G2P pronunciation dictionaries
-│   │   ├── cmudict.dict         # English ARPAbet
-│   │   ├── mandarin_pinyin.dict # Chinese Pinyin
-│   │   └── opencpop-strict.txt  # Core phoneme dictionary
-│   ├── g2p/                     # Neural G2P models (npz)
-│   │   └── checkpoint20.npz
-│   └── custom_dict.txt          # User-defined custom dictionary (Hot reload)
-└── avatars/                     # User voices and reference audios
-    └── {avatarId}/              # Voice ID directory
-        └── references/          # Reference audio list (WAV)
-            └── ... 
+├── models_v1/                   # V1 Engines (Flattened)
+│   └── {avatarId}/              # core vits.onnx is located here
+├── models_v2/                   # V2 Engines
+│   └── {avatarId}/              # sovits.onnx etc.
+├── shared/                      # Base Resources
+│   ├── g2p/                     # Dictionaries (JA/ZH/EN)
+│   ├── v1_extra/                # Common Bert/Hubert components
+├── avatars/                     # Voice Library
+│   └── {avatarId}/              # Reference audio folder
 ```
 
 ---
 
 ## 📦 Portable Package Usage
 
-1. **Download and Extract** the integration package.
-2. **Start WebAPI**: Run `astra-server.exe`. It runs at `http://localhost:5000` by default.
-   - To expose to LAN, add parameter: `astra-server.exe --urls "http://*:5000"`
-3. **Local Testing**: Run `astra-cli.exe` to enter interactive mode.
-4. **Custom Config**: Simply edit `config.json` for live updates.
-
+1.  **Download and Extract** the integration package.
+2.  **Start Web Dashboard**: Run `astra-server.exe`.
+3.  **Access Interface**: Open `http://localhost:5000` in your browser.
+    - Use the "Converter" tab to import your SoVITS models.
+    - Use the "Avatars" tab to upload reference audios and tune parameters.
+4.  **CLI Testing**: Run `astra-cli.exe` for local low-latency playback.
 
 ---
 
-## 🛠️ Model Conversion Tool (GPT-SoVITS to V1)
+## ⚙️ Configuration Guide (`config.yaml`)
 
-We have integrated the Python conversion script in the `tools/converter` directory to convert standard GPT-SoVITS `.ckpt` and `.pth` files to the ONNX format used by Astra-TTS V1:
+The system now prioritizes YAML format. Core configuration example (see `config.template.yaml` for full details):
 
-1. **Initialize Environment** (Requires Python 3.9+):
-   ```powershell
-   cd tools/converter
-   ./init_env.ps1
-   ```
-2. **Run Conversion**:
-   ```powershell
-   ./venv/Scripts/python.exe v1_converter.py --ckpt <GPT_CKPT_PATH> --pth <SoVITS_PTH_PATH> --shells ./templates --out ./output_dir
-   ```
+```yaml
+ResourcesDir: "resources"      # Resource path
+DefaultAvatarId: "default"     # Default voice ID
+
+# Performance Settings
+IntraOpNumThreads: 0           # 0 for auto
+InterOpNumThreads: 1           # Inter-operator parallelism
+PoolCapacity: 4                # Inference engine pool size for concurrency
+
+# Engine & Inference
+UseEngineV2: false             # default to V1
+Speed: 1.0                     # default speed
+StreamingMode: true            # enable streaming
+
+# Voice Definitions
+Avatars:
+- Id: default
+  Name: "My Voice"
+  References:
+  - Id: normal
+    AudioPath: "ref.wav"
+    Language: "zh"             # Specify reference audio language
+```
 
 ---
 
 ## 🚀 Developer Quick Start (Source Build)
 
 ### Prerequisites
-- .NET 10.0 SDK or higher.
-- Windows 10/11 (WASAPI components currently require Windows).
+- .NET 10.0 SDK.
+- **Windows 10/11** (Windows is mandatory; other platforms are not supported).
 
-### 1. Configuration
-Copy `config.template.json` to `config.json`. Update `ResourcesDir` if necessary.
-
-### 2. Build & Run
-```bash
-# Build the solution
-dotnet build
-
-# Start CLI Interactive mode
-dotnet run --project AstraTTS.CLI
-
-# Start Web API service
-dotnet run --project AstraTTS.Web
-```
-
----
-
-## ⚙️ Configuration Guide (`config.json`)
-
-The following guide is based on the **V1 Engine** configuration:
-
-```json
-{
-  "ResourcesDir": "resources",      // Root resource directory
-  "UseEngineV2": false,             // Whether to use V2 engine (Suggested: false)
-  "DefaultAvatarId": "default",     // Default voice ID
-  
-  "IntraOpNumThreads": 0,           // ONNX internal thread count (0 = auto)
-  "InterOpNumThreads": 0,           // ONNX operator thread count
-  
-  "Speed": 1.0,                     // Speed (0.5 - 2.0, V1/V2 supported)
-  
-  "StreamingMode": true,            // Enable streaming synthesis
-  "StreamingChunkSize": 22,         // Min tokens for stream trigger (V1 Only)
-  "StreamingPreBufferChunks": 2,    // Pre-buffer chunks before playback (Reduces stuttering)
-  
-  "WasapiExclusiveMode": true,      // (CLI) WASAPI exclusive mode for playback
-  
-  "Avatars": [                      // Voice library
-    {
-      "Id": "default",
-      "Name": "Default Voice",
-      "References": [               // Reference audio
-        {
-          "Id": "normal",
-          "AudioPath": "normal.wav",// WAV audio path (Rel to avatar references dir)
-          "Text": "..."             // Transcription of the reference audio
-        }
-      ]
-    }
-  ]
-}
-```
+### Build & Run
+1.  Clone the repository: `git clone https://github.com/your-repo/AstraTTS.git`
+2.  Navigate to the project directory: `cd AstraTTS`
+3.  Restore dependencies: `dotnet restore`
+4.  Build the solution: `dotnet build`
+5.  Run the web server: `dotnet run --project AstraTTS.Web`
+6.  Access the WebUI at `http://localhost:5000`.
 
 ---
 

@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <strong>🎙️ 高性能跨平台 TTS (Text-to-Speech) 引擎</strong>
+  <strong>🎙️ 高性能 Windows 专用 TTS (Text-to-Speech) 引擎</strong>
 </p>
 
 <p align="center">
-  基于 ONNX Runtime 的高质量语音合成解决方案，支持流式输出、基础多音色管理、低延迟播放。
+  基于 ONNX Runtime 的高性能语音合成解决方案，支持流式输出、高性能并发推理、多音色管理。
 </p>
 
 <p align="center">
@@ -18,175 +18,118 @@
 
 ---
 
-## 🚀 稳定版下载 (推荐)
+## 📢 新版本 v1.1.1 测试发布！
 
-如果你不想进行繁琐的编译环境配置，可以直接下载我们预构建的**整合包**：
+AstraTTS 迎来重大更新，正式引入日语支持与全新的 Web 可视化管理界面。
 
-👉 **[下载最新稳定版整合包](https://github.com/Blackwood416/AstraTTS/releases/latest)**
-
-> [!TIP]
-> 整合包已内置所有必需的运行时环境及 V1 默认音色，解压后即可按下方 [整合包使用说明](#-整合包使用说明) 运行。
+### ✨ 新增功能与改进
+- 🇯🇵 **日语支持** - 引入基于 OpenJTalk 的日语 G2P 系统，支持中日动态混读（目前仅支持双语混合，不支持三语同载）。
+- 🖥️ **全新 WebUI** - 启动 `astra-server.exe` 后访问 `http://localhost:5000` 即可：
+  - **音色管理**：可视化编辑、批量参考音频管理（支持直接上传音频文件）。
+  - **配置编辑**：在线修改全局参数，支持热重载。
+  - **在线调试**：流式/非流式合成测试、性能压力测试。
+  - **模型转换**：集成针对 **GPT-SoVITS V2ProPlus** 架构优化的转换逻辑，支持网页端一键操作。
+- ⚖️ **并发推理增强** - 引入推理引擎池（Inference Pool），利用多核 CPU 实现高并发请求处理，支持 `PoolCapacity` 配置。
+- 🧠 **G2P 系统重构** - 全面重写字素到音素系统，显著提升处理速度与多音字纠准。
+- 📝 **YAML 配置支持** - 统一使用 YAML 格式 (`config.yaml`)。
+  - **结构清晰**：完美支持注释，由 `config.template.yaml` 提供详尽参数说明。
+- 📂 **目录结构优化** - 扁平化 `models_v1` 存储结构，移除冗余嵌套，优化加载路径。
 
 ---
 
-## ✨ 特性
+## ✨ 项目特性
 
-- 🚀 **高性能推理** - 基于 ONNX Runtime，针对 CPU 推理进行了深度优化。
-- 🎵 **流式合成** - 实时流式输出音频，首包延迟极低，支持边合成边播放。
-- 🎭 **多音色管理** - 支持自定义音色库及参考音频配置。
-- 🔧 **灵活部署** - 提供交互式 CLI 工具和标准 Web API 服务。
-- 🌐 **混合语言** - 内置中英文 G2P 系统，支持自然的中英文混读。
-- 🔄 **热重载** - 支持在不停止服务的情况下动态重载配置文件。
+- 🚀 **高性能推理** - 基于 ONNX Runtime，针对 CPU 指令集深度优化，推理速度远快于传统的 Python 推理。
+- ⚖️ **高并发支持** - 内置推理池设计，支持多路并发合成，充分利用多核 CPU 资源。
+- 🎵 **流式输出** - 毫秒级首包延迟，支持边合成边播放，告别卡顿。
+- 🎭 **可视化管理** - 强大的 WebUI 面板，涵盖音色管理、模型转换与参数调节。
+- 🌐 **多语言支持** - 完善的中/英、中/日双语混读支持（三语混合尚在开发中）。
+- 🔄 **热重载** - 配置项可以在服务运行时即刻生效。
 
 ## 📦 项目结构
 
-- **AstraTTS.Core**: 核心 SDK，包含推理引擎、文本处理 (G2P/TextNorm) 及音频工具。
-- **AstraTTS.CLI**: 命令行交互工具，支持一键合成及实时流式播放测试。
-- **AstraTTS.Web**: 基于 ASP.NET Core 的 Web 服务，提供 RESTful API 及简单的 API 文档界面。
+- **AstraTTS.Core**: 核心 SDK，包含混合 G2P 引擎、RoBERTa/Hubert 特征提取器及高性能各版本推理引擎。
+- **AstraTTS.CLI**: Windows 专用命令行交互工具，支持低延迟 WASAPI 直接播放。
+- **AstraTTS.Web**: 后端 Web 服务，集成全套 WebUI 管理功能。
 
 ---
 
 ## 🔧 引擎版本对比
 
-AstraTTS 支持两个版本的推理引擎。目前 **V1 为推荐使用的稳定版本**。
+AstraTTS 默认使用 **V1 引擎 (推荐)**。V2 目前仍处于较低成熟阶段。
 
 | 特性 | V1 引擎 (推荐) | V2 引擎 (实验性) |
 | :--- | :--- | :--- |
-| **项目来源** | 基于 [Genie-TTS](https://github.com/High-Logic/Genie-TTS) | 基于 [GPT-SoVITS-Minimal](https://github.com/GPT-SoVITS-Devel/GPT-SoVITS_minimal_inference) |
-| **状态** | ✅ 稳定，生产就绪 | 🚧 开发中 (WIP)，波动较大 |
-| **加速支持** | 仅 CPU (高度优化) | 仅 CPU (GPU 支持开发中) |
-| **语速调节** | ✅ 支持 (`Speed`) | ✅ 支持 (`Speed`) |
-| **采样参数** | ❌ 不支持 (TopK/Temp) | ✅ 支持 (`TopK`, `Temperature`) |
-| **噪声系数** | ❌ 不支持 | ✅ 支持 (`NoiseScale`) |
+| **项目来源** | 基于 [Genie-TTS](https://github.com/High-Logic/Genie-TTS) | 基于 [GPT-SoVITS-Minimal](https://github.com/GPT-SoVITS_minimal) |
+| **状态** | ✅ 稳定，支持 **V2ProPlus** 模型克隆 | 🚧 开发中 (WIP) |
+| **语种能力** | ✅ 中日混读 / 中英混读 (双语) | ⚠️ 仅中英 |
+| **采样参数** | ❌ 确定性生成 (不支持 TopK/Temp) | ✅ 支持 TopK / Temp / NoiseScale |
+| **并发能力** | ✅ 支持 (Inference Pool) | ✅ 支持 |
 
 #### 📂 模型与资源目录
 
-资源建议存放于程序同级的 `resources` 目录下，层级结构如下：
+资源结构（1.1.x+ 版本）：
 
 ```text
 resources/
-├── models_v1/                   # V1 引擎模型 (基于 Genie-TTS)
-│   └── {avatarId}/              # 音色子目录 (如 default)
-│       ├── speaker_encoder.onnx # 声纹特征提取模型
-│       ├── bert/                # 文本前端 RoBERTa 模型
-│       │   ├── roberta.onnx
-│       │   └── tokenizer/       # 分词器资源 (json, vocab.txt)
-│       ├── hubert/              # 音频前端 Hubert 模型
-│       │   └── chinese-hubert-base_full.onnx
-│       └── tts/                 # VITS 核心指令推理模型
-│           ├── vits.onnx        # 核心合成网络
-│           ├── prompt_encoder.onnx
-│           ├── t2s_encoder.onnx
-│           ├── t2s_first_stage_decoder.onnx
-│           └── t2s_stage_decoder.onnx
-├── models_v2/                   # V2 引擎模型 (基于 GPT-SoVITS-minimal-inference)
-│   └── {avatarId}/              # 音色子目录 (如 default)
-│       ├── sovits.onnx / gpt_encoder.onnx / gpt_step.onnx
-│       └── bert.onnx / ssl.onnx / vq_encoder.onnx / config.json
-├── shared/                      # 多引擎共享资源
-│   ├── dictionaries/            # G2P 发音词典库
-│   │   ├── cmudict.dict         # 英文 ARPAbet
-│   │   ├── mandarin_pinyin.dict # 中文拼音
-│   │   └── opencpop-strict.txt  # 核心音素字典
-│   ├── g2p/                     # Neural G2P 神经网络模型 (npz)
-│   │   └── checkpoint20.npz
-│   └── custom_dict.txt          # 用户自定义词典 (支持热更新)
-└── avatars/                     # 用户音色与参考素材库
-    └── {avatarId}/              # 音色标识目录
-        └── references/          # 该音色的参考文件列表 (WAV)
-            └── ... 
+├── models_v1/                   # V1 引擎模型 (扁平化)
+│   └── {avatarId}/              # 核心 vits.onnx 存放处
+├── models_v2/                   # V2 引擎模型
+│   └── {avatarId}/              # sovits.onnx 等
+├── shared/                      # 基础库
+│   ├── g2p/                     # 日语/中/英字典及模型
+│   ├── v1_extra/                # 通用 Bert/Hubert 组件
+├── avatars/                     # 角色音色库
+│   └── {avatarId}/              # 参考音频目录
 ```
 
 ---
 
 ## 📦 整合包使用说明
 
-1. **下载并解压** 整合包。
-2. **启动 WebAPI**: 运行 `astra-server.exe`。默认在 `http://localhost:5000` 运行。
-   - 如需暴露到局域网，可添加参数：`astra-server.exe --urls "http://*:5000"`
-3. **本地测试**: 运行 `astra-cli.exe` 进入交互模式。
-
-4. **自定义配置**: 修改 `config.json` 即可即时生效。
+1.  **下载并解压** 整合包。
+2.  **启动 Web 控制面板**: 运行 `astra-server.exe`。
+3.  **访问界面**: 浏览器打开 `http://localhost:5000`。
+    - 在“模型转换”页可导入 SoVITS 模型。
+    - 在“音色库管理”页可上传参考音频并调整参数。
+4.  **命令行使用**: 运行 `astra-cli.exe` 进行本地低延迟朗读。
 
 ---
 
-## 🛠️ 模型转换工具 (GPT-SoVITS to V1)
+## ⚙️ 配置文件说明 (`config.yaml`)
 
-我们将 Python 转换脚本集成了到了 `tools/converter` 目录下，用于将标准的 GPT-SoVITS `.ckpt` 和 `.pth` 转换为 Astra-TTS V1 使用的 ONNX 格式：
+新版本全面转向 YAML 格式。以下为核心配置项示例（完整说明见 `config.template.yaml`）：
 
-1. **初始化环境** (需要 Python 3.9+):
-   ```powershell
-   cd tools/converter
-   ./init_env.ps1
-   ```
-2. **运行转换**:
-   ```powershell
-   ./venv/Scripts/python.exe v1_converter.py --ckpt <GPT权重路径> --pth <SoVITS权重路径> --shells ./templates --out ./output_dir
-   ```
+```yaml
+ResourcesDir: "resources"      # 资源位置
+DefaultAvatarId: "default"     # 默认音色
+
+# 性能配置
+IntraOpNumThreads: 0           # 0 为自动线程数
+InterOpNumThreads: 1           # 算子间并行
+
+# 引擎与推理
+UseEngineV2: false             # 默认使用 V1 
+Speed: 1.0                     # 默认语速
+StreamingMode: true            # 开启流式
+
+# 音色定义
+Avatars:
+- Id: default
+  Name: "我的音色"
+  References:
+  - Id: normal
+    AudioPath: "ref.wav"
+    Language: "zh"             # 指定参考音频语种
+```
 
 ---
 
 ## 🚀 开发者快速开始 (从源码构建)
 
 ### 运行环境
-- .NET 10.0 SDK 或更高。
-- Windows 10/11 (WASAPI 低延迟组件目前仅支持 Windows)。
-
-### 1. 配置
-复制 `config.template.json` 为 `config.json` 并根据需要修改 `ResourcesDir`。
-
-### 2. 编译与运行
-```bash
-# 构建整个解决方案
-dotnet build
-
-# 启动 CLI 交互模式 (默认开启音频播放)
-dotnet run --project AstraTTS.CLI
-
-# 启动 Web API 服务
-dotnet run --project AstraTTS.Web
-```
-
----
-
-## ⚙️ 配置文件说明 (`config.json`)
-
-由于 JSON 不支持注释，本手册提供了详细的配置项说明。以下示例基于 **V1 引擎**：
-
-```json
-{
-  "ResourcesDir": "resources",      // 资源根目录
-  "UseEngineV2": false,             // 是否切换到 V2 引擎 (建议保持为 false)
-  "DefaultAvatarId": "default",     // 默认音色 ID
-  
-  "IntraOpNumThreads": 0,           // ONNX 线程并行数 (0 为自动)
-  "InterOpNumThreads": 0,           // 算子间并行线程数
-  
-  "Speed": 1.0,                     // 语速 (0.5 - 2.0，V1/V2 通用)
-  
-  "StreamingMode": true,            // 是否启用流式合成
-  "StreamingChunkSize": 22,         // 流式触发所需的最小音素数 (仅 V1)
-  "StreamingPreBufferChunks": 2,    // 播放前预缓冲的分块数 (减少播放卡顿)
-  
-  "WasapiExclusiveMode": true,      // (CLI) 是否启用 WASAPI 独占模式播放
-  
-  "Avatars": [                      // 音色/人物配置库
-    {
-      "Id": "default",
-      "Name": "默认音色",
-      "References": [               // 每个音色可拥有多条参考音频
-        {
-          "Id": "normal",
-          "AudioPath": "normal.wav",// 参考音频 WAV 路径 (相对于该音色 references 目录)
-          "Text": "..."             // 参考音频对应的文本内容
-        }
-      ]
-    }
-  ]
-}
-```
-
----
+- .NET 10.0 SDK。
+- **Windows 10/11** (目前强制依赖 Windows，不支持跨平台)。
 
 ## 📄 许可证
 MIT License

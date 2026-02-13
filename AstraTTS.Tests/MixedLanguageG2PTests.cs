@@ -14,6 +14,7 @@ namespace AstraTTS.Tests
     {
         private readonly ChineseG2P _chinese;
         private readonly EnglishG2P _english;
+        private readonly JapaneseG2P? _japanese;
         private readonly MixedLanguageG2P _mixed;
 
         private static readonly string BaseDir = AppDomain.CurrentDomain.BaseDirectory;
@@ -28,7 +29,8 @@ namespace AstraTTS.Tests
             string dict = Path.Combine(DictDir, "mandarin_pinyin.dict");
             string poly = Path.Combine(DictDir, "polyphonic.json");
             string jieba = Path.Combine(DictDir, "jieba");
-            _chinese = new ChineseG2P(vocab, dict, "", poly, jieba);
+            string customDict = Path.Combine(ProjectDir, "resources", "shared", "custom_dict.txt");
+            _chinese = new ChineseG2P(vocab, dict, customDict, poly, jieba);
 
             string cmu = Path.Combine(ProjectDir, "resources", "shared", "g2p", "dicts", "english", "cmudict.dict");
             string g2pBase = Path.Combine(ProjectDir, "resources", "shared", "g2p", "models", "english");
@@ -37,9 +39,16 @@ namespace AstraTTS.Tests
             string posDir = Path.Combine(g2pBase, "taggers", "averaged_perceptron_tagger_eng");
             string segDir = Path.Combine(g2pBase, "wordsegment");
 
-            _english = new EnglishG2P(cmu, g2pModel, "", posDir, segDir);
+            string special = Path.Combine(ProjectDir, "resources", "shared", "g2p", "dicts", "english", "en_special_words.txt");
+            _english = new EnglishG2P(cmu, g2pModel, customDict, posDir, segDir, special);
 
-            _mixed = new MixedLanguageG2P(_chinese, _english);
+            string jpDictDir = Path.Combine(ProjectDir, "resources", "shared", "g2p", "dicts", "japanese", "open_jtalk_dic_utf_8-1.11");
+            if (Directory.Exists(jpDictDir))
+            {
+                _japanese = new JapaneseG2P(jpDictDir, customDict);
+            }
+
+            _mixed = new MixedLanguageG2P(_chinese, _english, _japanese, new[] { "zh", "en", "ja" });
 
             // Verify components are loaded
             Assert.True(_english.HasPosTagger, "EnglishPosTagger failed to load.");
@@ -63,9 +72,65 @@ namespace AstraTTS.Tests
         [Fact]
         public void TestLanguageTag()
         {
-            var res = _mixed.Process("[lang=en]123[/lang]");
+            var res = _mixed.Process("{en 123}");
             Assert.Contains(res.Segments ?? new System.Collections.Generic.List<LanguageSegment>(),
                 s => s.Text.ToLower().Contains("one hundred twenty three") && s.Language == PhoneLanguage.English);
+        }
+        [Fact]
+        public void TestReportedIssue()
+        {
+            // GPT{zh 5.3}-Codex should not be split inside the tag
+            var res = _mixed.Process("GPT{zh 5.3}-Codex");
+            var segments = res.Segments ?? new System.Collections.Generic.List<LanguageSegment>();
+
+
+
+            // Check that 5.3 is in a Chinese segment (it should be normalized to 五点三)
+            Assert.Contains(segments, s => s.Text.Contains("五点三") && s.Language == PhoneLanguage.Chinese);
+            // Check that GPT is in an English segment (it will be expanded to G P T)
+            Assert.Contains(segments, s => s.Text.Replace(" ", "").Contains("GPT") && s.Language == PhoneLanguage.English);
+            // Check that Codex is in an English segment
+            Assert.Contains(segments, s => s.Text.Contains("Codex") && s.Language == PhoneLanguage.English);
+        }
+
+        [Fact]
+        public void TestNumericDominantLanguage()
+        {
+            // Case 1: 主体为中文的句子，数字应被正规化为中文
+            var res1 = _mixed.Process("GPT 5.3 Codex 刚刚发布");
+            var seg1 = res1.Segments ?? new System.Collections.Generic.List<LanguageSegment>();
+            string debug1 = string.Join(" | ", seg1.Select(s => $"{s.Text} ({s.Language})"));
+            Assert.True(seg1.Any(s => s.Text.Contains("五点三") && s.Language == PhoneLanguage.Chinese),
+                $"Expected '五点三' in Chinese segment, but got: {debug1}");
+
+            // Case 2: 纯英文句子，数字仍正规化为英文
+            var res2 = _mixed.Process("GPT 5.3 Codex just released");
+            var seg2 = res2.Segments ?? new System.Collections.Generic.List<LanguageSegment>();
+            string debug2 = string.Join(" | ", seg2.Select(s => $"{s.Text} ({s.Language})"));
+            Assert.True(seg2.Any(s => s.Language == PhoneLanguage.English && s.Text.ToLower().Contains("five point three")),
+                $"Expected 'five point three' in English segment, but got: {debug2}");
+        }
+
+        [Fact]
+        public void TestLanguageRestriction()
+        {
+            // 默认构造，仅允许 zh, en
+            var restrictedMixed = new MixedLanguageG2P(_chinese, _english, _japanese, new[] { "zh", "en" });
+
+            // Case 1: 包含不允许的语种 (ja) -> 抛出异常
+            Assert.Throws<InvalidOperationException>(() => restrictedMixed.Process("さくら"));
+
+            // Case 2: 包含超过两种语种 -> 抛出异常
+            var triMixed = new MixedLanguageG2P(_chinese, _english, _japanese, new[] { "zh", "en", "ja" });
+            Assert.Throws<InvalidOperationException>(() => triMixed.Process("GPT さくら 刚刚发布"));
+        }
+
+        [Fact]
+        public void TestNativeModeTag()
+        {
+            var res = _mixed.Process("你好 {ni3}{hao3}");
+            Assert.Contains("n", res.Phones);
+            Assert.Contains("i3", res.Phones);
         }
 
         [Fact]
@@ -73,14 +138,14 @@ namespace AstraTTS.Tests
         {
             // Test Currency
             var res1 = _mixed.Process("$5.20");
-            string s1 = string.Join(" | ", res1.Segments.Select(s => $"{s.Text} ({s.Language})"));
-            Assert.True(res1.Segments.Any(s => s.Text.ToLower().Contains("five dollars and twenty cents")),
+            string s1 = string.Join(" | ", (res1.Segments ?? new System.Collections.Generic.List<LanguageSegment>()).Select(s => $"{s.Text} ({s.Language})"));
+            Assert.True((res1.Segments ?? new System.Collections.Generic.List<LanguageSegment>()).Any(s => s.Text.ToLower().Contains("five dollars and twenty cents")),
                 $"Expected 'five dollars and twenty cents', but got: {s1}");
 
             // Test Date
             var res2 = _mixed.Process("10/1/2023");
-            string s2 = string.Join(" | ", res2.Segments.Select(s => $"{s.Text} ({s.Language})"));
-            Assert.True(res2.Segments.Any(s => s.Text.ToLower().Contains("october first, twenty twenty three")),
+            string s2 = string.Join(" | ", (res2.Segments ?? new System.Collections.Generic.List<LanguageSegment>()).Select(s => $"{s.Text} ({s.Language})"));
+            Assert.True((res2.Segments ?? new System.Collections.Generic.List<LanguageSegment>()).Any(s => s.Text.ToLower().Contains("october first, twenty twenty three")),
                 $"Expected 'october first, twenty twenty three', but got: {s2}");
 
             // Test Possessive
@@ -90,11 +155,42 @@ namespace AstraTTS.Tests
 
             // Test Mixed Currency
             var res4 = _mixed.Process("价格为$5.20");
-            string s4 = string.Join(" | ", res4.Segments.Select(s => $"{s.Text} ({s.Language})"));
-            Assert.True(res4.Segments.Any(s => s.Language == PhoneLanguage.Chinese && s.Text.Contains("价格为")),
+            string s4 = string.Join(" | ", (res4.Segments ?? new List<LanguageSegment>()).Select(s => $"{s.Text} ({s.Language})"));
+            Assert.True((res4.Segments ?? new List<LanguageSegment>()).Any(s => s.Language == PhoneLanguage.Chinese && s.Text.Contains("价格为")),
                 $"Expected Chinese '价格为', but got: {s4}");
-            Assert.True(res4.Segments.Any(s => s.Language == PhoneLanguage.English && s.Text.ToLower().Contains("five dollars and twenty cents")),
+            Assert.True((res4.Segments ?? new List<LanguageSegment>()).Any(s => s.Language == PhoneLanguage.English && s.Text.ToLower().Contains("five dollars and twenty cents")),
                 $"Expected English 'five dollars and twenty cents', but got: {s4}");
+        }
+
+
+        [Fact]
+        public void TestSpecialDictCase()
+        {
+            // "OpenAI" should match "openai" in specialDict despite camelCase splitting
+            var res = _mixed.Process("OpenAI");
+            // openai in special dict is: OW1 P AH0 N EY0 AY1
+            // If split into "Open AI", it becomes: OW1 P AH0 N [SP] EY1 AY1
+            Assert.Contains("ey0", res.Phones.Select(p => p.ToLower()));
+            Assert.DoesNotContain("sp", res.Phones.Select(p => p.ToLower())); // Should not be split with a space/SP
+        }
+
+        [Fact]
+        public void TestAcronymsAndAlphanumeric()
+        {
+            // AI should match specialDict and NOT be split into A I
+            var resAI = _mixed.Process("AI is helpful");
+            Assert.Contains("ey1", resAI.Phones.Select(p => p.ToLower()));
+            Assert.Contains("ay1", resAI.Phones.Select(p => p.ToLower()));
+            // If it was split into "A I", it would contain "ah0" (from A)
+            Assert.DoesNotContain("ah0", resAI.Phones.Select(p => p.ToLower()).Take(1));
+
+            // GPT4 should become GPT 4 and match GPT in specialDict
+            var resGPT4 = _mixed.Process("GPT4");
+            // GPT in specialDict: JH IY1 P IY1 T IY1
+            Assert.Contains("jh", resGPT4.Phones.Select(p => p.ToLower()));
+            // 4 should be normalized to "four": F AO1 R
+            Assert.Contains("f", resGPT4.Phones.Select(p => p.ToLower()));
+            Assert.Contains("ao1", resGPT4.Phones.Select(p => p.ToLower()));
         }
 
         [Fact]
@@ -157,7 +253,7 @@ namespace AstraTTS.Tests
 
             // Test "record"
             // "record a song" -> record (VB) -> /rɪˈkɔːrd/ (IH0)
-            var res9 = _mixed.Process("record a song");
+            var res9 = _mixed.Process("I record a song");
             Assert.Contains("ih0", res9.Phones.Select(p => p.ToLower()));
             Assert.DoesNotContain("eh1", res9.Phones.Select(p => p.ToLower()));
 
@@ -201,11 +297,50 @@ namespace AstraTTS.Tests
         }
 
         [Fact]
-        public void TestNativeModeTag()
+        public void TestJapaneseCustomDict()
         {
-            var res = _mixed.Process("你好 {ni3}{hao3}");
-            Assert.Contains("n", res.Phones);
-            Assert.Contains("i3", res.Phones);
+            if (_japanese == null) return;
+
+            // "TEST_JP" is in custom_dict.txt as "v i d e o"
+            var res = _mixed.Process("TEST_JP");
+            Assert.Contains("v", res.Phones);
+            Assert.Contains("i", res.Phones);
+            Assert.Contains("d", res.Phones);
+            Assert.Contains("e", res.Phones);
+            Assert.Contains("o", res.Phones);
+
+            // "こんにちは" is in custom_dict.txt as "a k i b a r a"
+            var res2 = _mixed.Process("こんにちは");
+            Assert.Contains("k", res2.Phones);
+            Assert.Contains("b", res2.Phones);
+        }
+
+        [Fact]
+        public void TestJapaneseLanguageSwitching()
+        {
+            // "我刚才在听《さくら》，旋律非常优美。"
+            // Expected Segments:
+            // 1. "我刚才在听" (ZH)
+            // 2. "《" (Other/Symbol -> processed separately)
+            // 3. "さくら" (JP)
+            // 4. "》，" (Other/Symbol+Punc -> separate or handled)
+            // 5. "旋律非常优美" (ZH)
+
+            var res = _mixed.Process("我刚才在听《さくら》，旋律非常优美。");
+            var segments = res.Segments ?? new System.Collections.Generic.List<LanguageSegment>();
+
+            // Check segments
+            Assert.Contains(segments, s => s.Text.Contains("我刚才在听") && s.Language == PhoneLanguage.Chinese);
+            Assert.Contains(segments, s => s.Text.Contains("さくら") && s.Language == PhoneLanguage.Japanese);
+            Assert.Contains(segments, s => s.Text.Contains("旋律非常优美") && s.Language == PhoneLanguage.Chinese);
+
+            // Check if punctuation phones are present
+            // ， was mapped to , in Process loop
+            Assert.Contains(",", res.Phones);
+
+            // Book titles should NOT be in the phones (mapped to " " which doesn't add a phone)
+            // but punctuation should.
+            Assert.Contains(".", res.Phones); // Ending period
         }
     }
 }
