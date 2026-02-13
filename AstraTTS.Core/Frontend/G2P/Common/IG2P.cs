@@ -52,6 +52,6 @@ namespace AstraTTS.Core.Frontend.G2P.Common
 
     public interface IG2P
     {
-        G2PResult Process(string text);
+        G2PResult Process(string text, int? priorityMode = null);
     }
 }

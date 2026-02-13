@@ -11,14 +11,14 @@ namespace AstraTTS.Core.Core
     /// </summary>
     public class AstraTtsSdk : IDisposable
     {
-        private ITtsEngine _engine;
+        private TtsEnginePool _pool;
         private TTSConfig _config;
         private readonly object _lock = new();
 
         /// <summary>
         /// 获取采样率。
         /// </summary>
-        public int SamplingRate => _engine.SamplingRate;
+        public int SamplingRate => _pool.SamplingRate;
 
         /// <summary>
         /// 获取当前生效的配置。
@@ -37,12 +37,7 @@ namespace AstraTTS.Core.Core
         public AstraTtsSdk(TTSConfig? config = null)
         {
             _config = config ?? TTSConfig.Load();
-            _engine = CreateEngine(_config);
-        }
-
-        private static ITtsEngine CreateEngine(TTSConfig config)
-        {
-            return config.UseEngineV2 ? new TtsEngineV2() : new TtsEngineV1();
+            _pool = new TtsEnginePool(_config);
         }
 
         /// <summary>
@@ -50,27 +45,36 @@ namespace AstraTTS.Core.Core
         /// </summary>
         public async Task InitializeAsync()
         {
-            await _engine.LoadAsync(_config);
+            await _pool.InitializeAsync();
         }
 
         /// <summary>
-        /// 热重载配置并重新初始化引擎。
+        /// 重新加载配置并重新初始化引擎。
         /// </summary>
         public async Task ReloadConfigAsync()
         {
             var newConfig = TTSConfig.Reload();
-            var newEngine = CreateEngine(newConfig);
-            await newEngine.LoadAsync(newConfig);
+            await ApplyConfigAsync(newConfig);
+            Console.WriteLine("[AstraTTS] Configuration reloaded successfully.");
+        }
+
+        /// <summary>
+        /// 直接应用当前配置（或指定配置）到引擎。
+        /// 不会从磁盘重新加载配置文件。
+        /// </summary>
+        public async Task ApplyConfigAsync(TTSConfig? config = null)
+        {
+            var targetConfig = config ?? _config;
+            var newPool = new TtsEnginePool(targetConfig);
+            await newPool.InitializeAsync();
 
             lock (_lock)
             {
-                var oldEngine = _engine;
-                _engine = newEngine;
-                _config = newConfig;
-                oldEngine.Dispose();
+                var oldPool = _pool;
+                _pool = newPool;
+                _config = targetConfig;
+                oldPool.Dispose();
             }
-
-            Console.WriteLine("[AstraTTS] Configuration reloaded successfully.");
         }
 
         /// <summary>
@@ -91,14 +95,16 @@ namespace AstraTTS.Core.Core
         /// <param name="options">推理选项。如果为 null 则使用配置中的默认值。</param>
         /// <param name="avatarId">音色 ID (可选)。</param>
         /// <param name="referenceId">参考音频 ID (可选)。</param>
-        /// <returns>音频采样数据 (PCM Float32)</returns>
-        public async Task<float[]> PredictAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null)
+        /// <returns>包含音频数据和元数据的 TtsResult</returns>
+        public async Task<TtsResult> PredictAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null)
         {
             var opt = options ?? GetDefaultOptions();
             opt.AvatarId = avatarId ?? _config.DefaultAvatarId;
             opt.ReferenceId = referenceId;
+            opt.Languages ??= _config.G2P.Languages != null ? new List<string>(_config.G2P.Languages) : null;
 
-            return await _engine.PredictAsync(text, opt);
+            using var lease = await _pool.LeaseAsync();
+            return await lease.Engine.PredictAsync(text, opt);
         }
 
         /// <summary>
@@ -110,12 +116,18 @@ namespace AstraTTS.Core.Core
         /// <param name="referenceId">参考音频 ID (可选)。</param>
         /// <param name="cancellationToken">取消令牌。</param>
         /// <returns>异步音频块流</returns>
-        public IAsyncEnumerable<float[]> PredictStreamAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null, CancellationToken cancellationToken = default)
+        public async IAsyncEnumerable<float[]> PredictStreamAsync(string text, TtsOptions? options = null, string? avatarId = null, string? referenceId = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             var opt = options ?? GetDefaultOptions();
             opt.AvatarId = avatarId ?? _config.DefaultAvatarId;
             opt.ReferenceId = referenceId;
-            return _engine.PredictStreamAsync(text, opt, cancellationToken);
+            opt.Languages ??= _config.G2P.Languages != null ? new List<string>(_config.G2P.Languages) : null;
+
+            using var lease = await _pool.LeaseAsync(cancellationToken);
+            await foreach (var chunk in lease.Engine.PredictStreamAsync(text, opt, cancellationToken))
+            {
+                yield return chunk;
+            }
         }
 
         private TtsOptions GetDefaultOptions()
@@ -127,13 +139,13 @@ namespace AstraTTS.Core.Core
                 Temperature = _config.Temperature,
                 TopK = _config.TopK,
                 StreamingChunkSize = _config.StreamingChunkSize,
-                StreamingChunkTokens = _config.StreamingChunkTokens
+                Languages = _config.G2P.Languages != null ? new List<string>(_config.G2P.Languages) : null
             };
         }
 
         public void Dispose()
         {
-            _engine.Dispose();
+            _pool.Dispose();
         }
     }
 }

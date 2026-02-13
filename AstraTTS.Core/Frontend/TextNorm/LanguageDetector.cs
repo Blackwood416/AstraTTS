@@ -99,26 +99,44 @@ namespace AstraTTS.Core.Frontend.TextNorm
             var sentences = new System.Collections.Generic.List<string>();
             if (string.IsNullOrWhiteSpace(text)) return sentences;
 
-            // 分句正则表达式：匹配结束标点 (。！？.!?) 或换行符，并使用 lookbehind/lookahead 精确切分
-            // 简单实现：遍历字符串并按标点切分，保留标点
             var sb = new System.Text.StringBuilder();
             char[] splitChars = { '。', '！', '？', '.', '!', '?', '\n', '\r' };
+            bool inTag = false;
 
             for (int i = 0; i < text.Length; i++)
             {
                 char c = text[i];
+
+                // 追踪是否在标签内 {}
+                if (c == '{') inTag = true;
+                else if (c == '}') inTag = false;
+
                 sb.Append(c);
 
-                if (System.Array.IndexOf(splitChars, c) >= 0)
+                if (!inTag && System.Array.IndexOf(splitChars, c) >= 0)
                 {
+                    // 小数点逻辑：如果是 . 且前后都是数字，则不视为句号
+                    if (c == '.')
+                    {
+                        bool isDigitBefore = i > 0 && char.IsDigit(text[i - 1]);
+                        bool isDigitAfter = i < text.Length - 1 && char.IsDigit(text[i + 1]);
+                        if (isDigitBefore && isDigitAfter) continue;
+                    }
+
                     string s = sb.ToString().Trim();
-                    if (!string.IsNullOrEmpty(s)) sentences.Add(s);
+                    if (!string.IsNullOrEmpty(s))
+                    {
+                        sentences.Add(s);
+                    }
                     sb.Clear();
                 }
             }
 
             string remaining = sb.ToString().Trim();
-            if (!string.IsNullOrEmpty(remaining)) sentences.Add(remaining);
+            if (!string.IsNullOrEmpty(remaining))
+            {
+                sentences.Add(remaining);
+            }
 
             return sentences;
         }

@@ -2,20 +2,25 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using System.Buffers;
 using System.Runtime.InteropServices;
+using AstraTTS.Core.Frontend.G2P.Common;
 
 namespace AstraTTS.Core.Core
 {
     public class InferenceEngineV1 : IDisposable
     {
-        /// <summary>
-        /// 调试模式开关。启用后会输出详细的中间结果用于对比 Python 实现。
-        /// </summary>
-        public static bool DebugMode { get; set; } = false;
+        public bool DebugMode { get; set; } = false;
 
-        private static void DebugLog(string message)
+        /// <summary>
+        /// 是否为共享模式。如果是共享模式，Dispose 不会释放 Session。
+        /// </summary>
+        public bool IsShared { get; set; } = false;
+
+        private void DebugLog(string message)
         {
             if (DebugMode) Console.WriteLine(message);
         }
+
+        private AstraTTS.Core.Config.TTSConfig? _config;
 
         private InferenceSession? _t2sEncoder;
         private InferenceSession? _firstStageDecoder;
@@ -27,37 +32,31 @@ namespace AstraTTS.Core.Core
         private InferenceSession? _hubert;
         private InferenceSession? _svModel; // Speaker Verification
 
-        private SessionOptions GetSessionOptions(bool useDirectML)
+        public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config)
         {
             var sessionOptions = new SessionOptions();
 
             // ============================================================
-            // CPU 性能优化配置 (针对 Xeon E5 2696V3: 18核36线程)
+            // 性能优化配置
             // ============================================================
 
             // 1. 线程配置
-            // IntraOpNumThreads: 单个算子内部的并行度
-            //   - 设为物理核心数，避免超线程竞争
-            //   - 对于大矩阵运算（MatMul）效果显著
-            sessionOptions.IntraOpNumThreads = 6;  // 物理核心数
-
-            // InterOpNumThreads: 算子之间的并行度
-            //   - TTS 是链式结构，设为 1 避免调度开销
-            //   - 如果模型有多个独立分支可以设更大
-            sessionOptions.InterOpNumThreads = 1;
+            sessionOptions.IntraOpNumThreads = config.IntraOpNumThreads;
+            sessionOptions.InterOpNumThreads = config.InterOpNumThreads;
 
             // 2. 执行模式
-            //   - ORT_SEQUENTIAL: 顺序执行算子（推荐用于链式模型）
-            //   - ORT_PARALLEL: 并行执行算子（适合有多分支的模型）
             sessionOptions.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
 
             // 3. 图优化级别
-            //   - ORT_ENABLE_ALL: 启用所有优化（常量折叠、算子融合等）
-            sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
+            sessionOptions.GraphOptimizationLevel = config.GraphOptimizationLevel switch
+            {
+                0 => GraphOptimizationLevel.ORT_DISABLE_ALL,
+                1 => GraphOptimizationLevel.ORT_ENABLE_BASIC,
+                2 => GraphOptimizationLevel.ORT_ENABLE_ALL,
+                _ => GraphOptimizationLevel.ORT_ENABLE_ALL
+            };
 
             // 4. 内存优化
-            //   - EnableCpuMemArena: 使用内存池减少分配开销
-            //   - EnableMemoryPattern: 基于执行模式优化内存布局
             sessionOptions.EnableCpuMemArena = true;
             sessionOptions.EnableMemoryPattern = true;
 
@@ -65,7 +64,7 @@ namespace AstraTTS.Core.Core
             sessionOptions.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
 
             // 6. DirectML 配置 (如果启用)
-            if (useDirectML)
+            if (config.UseDirectML)
             {
                 // DirectML 不支持 MemoryPattern
                 sessionOptions.EnableMemoryPattern = false;
@@ -75,11 +74,12 @@ namespace AstraTTS.Core.Core
             return sessionOptions;
         }
 
-        public void LoadModels(string modelDir, string? hubertPath = null, string? svPath = null, bool useDirectML = false)
+        public void LoadModels(string modelDir, AstraTTS.Core.Config.TTSConfig config, string? hubertPath = null, string? svPath = null)
         {
-            var opt = GetSessionOptions(useDirectML);
+            _config = config;
+            this.DebugMode = config.DebugMode;
+            var opt = GetSessionOptions(config);
 
-            // Parallel loading of all models (FP32 - INT8 ConvInteger 不支持)
             Parallel.Invoke(
                 () => _t2sEncoder = new InferenceSession(Path.Combine(modelDir, "t2s_encoder.onnx"), opt),
                 () => _firstStageDecoder = new InferenceSession(Path.Combine(modelDir, "t2s_first_stage_decoder.onnx"), opt),
@@ -108,6 +108,22 @@ namespace AstraTTS.Core.Core
                     }
                 }
             );
+        }
+
+        /// <summary>
+        /// 从另一个实例共享模型会话
+        /// </summary>
+        public void ShareModelsFrom(InferenceEngineV1 other)
+        {
+            _t2sEncoder = other._t2sEncoder;
+            _firstStageDecoder = other._firstStageDecoder;
+            _stageDecoder = other._stageDecoder;
+            _vocoder = other._vocoder;
+            _promptEncoder = other._promptEncoder;
+            _hubert = other._hubert;
+            _svModel = other._svModel;
+            _config = other._config;
+            IsShared = true;
         }
 
         public float[] GetHubertContent(float[] audio16k)
@@ -202,8 +218,9 @@ namespace AstraTTS.Core.Core
             return (ge, geAdvanced);
         }
 
-        public long[] RunT2S(long[] textSeq, float[,] textBert, long[] refSeq, float[,] refBert, float[] sslContent)
+        public long[] RunT2S(long[] textSeq, float[,] textBert, long[] refSeq, float[,] refBert, float[] sslContent, PhoneLanguage[]? languageTags = null, TtsOptions? options = null)
         {
+            options = ApplyConfig(options);
             if (_t2sEncoder == null || _firstStageDecoder == null || _stageDecoder == null)
                 throw new InvalidOperationException("T2S models not loaded.");
 
@@ -263,8 +280,8 @@ namespace AstraTTS.Core.Core
                 // 原因：First Stage Decoder 输出也是非确定性的（包含随机采样）， sometimes producing "bad" state that causes Stage Decoder to fail immediately.
                 // 因此必须重试整个解码过程。
 
-                // 动态阈值：使用 2x 乘数兼容中英文
-                int minExpectedTokens = Math.Max(8, textSeq.Length * 2);
+                // 动态阈值：使用语种感知的乘数
+                int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
                 if (DebugMode) DebugLog($"[T2S] Min expected tokens: {minExpectedTokens} (textSeq.Length={textSeq.Length})");
 
                 List<long> generatedTokens = new List<long>();
@@ -370,29 +387,18 @@ namespace AstraTTS.Core.Core
 
                 // 剔除 EOS
                 var eosIndex = generatedTokens.FindIndex(t => t >= 1024);
-                long[] result;
-                if (eosIndex >= 0)
-                {
-                    DebugLog($"[T2S] EOS found at index {eosIndex}, trimming...");
-                    result = generatedTokens.Take(eosIndex).ToArray();
-                }
-                else
-                {
-                    result = generatedTokens.ToArray();
-                }
-
-                DebugLog($"[T2S] Final semantic tokens count: {result.Length}");
-                if (DebugMode && result.Length > 5)
-                    DebugLog($"[T2S] First 5 tokens: {string.Join(", ", result.Take(5))}");
+                long[] finalSemantic = (eosIndex >= 0)
+                    ? generatedTokens.Take(eosIndex).ToArray()
+                    : generatedTokens.ToArray();
 
                 // 匹配 Python: y[0, -1] = 0
-                if (result.Length > 0)
+                if (finalSemantic.Length > 0)
                 {
-                    result[result.Length - 1] = 0;
+                    finalSemantic[finalSemantic.Length - 1] = 0;
                     DebugLog("[T2S] Set last token to 0 (matching Python)");
                 }
 
-                return result;
+                return finalSemantic;
             }
             finally
             {
@@ -420,8 +426,11 @@ namespace AstraTTS.Core.Core
             float[] refAudio32k, float[]? ge, float[]? geAdvanced,
             int chunkSize,
             Action<float[], bool> onAudioChunk,
-            float speed = 1.0f)  // 添加 speed 参数
+            float speed = 1.0f,
+            PhoneLanguage[]? languageTags = null,
+            TtsOptions? options = null)
         {
+            options = ApplyConfig(options);
             if (_t2sEncoder == null || _firstStageDecoder == null || _stageDecoder == null || _vocoder == null)
                 throw new InvalidOperationException("Models not loaded.");
 
@@ -444,9 +453,9 @@ namespace AstraTTS.Core.Core
                 var prompts = encoderResults.First(r => r.Name == "prompts").AsTensor<long>().Clone();
 
                 // === 2. T2S Decoder Loop with Streaming and Retry ===
-                // 动态阈值：使用 2x 乘数兼容中英文
-                int minExpectedTokens = Math.Max(8, textSeq.Length * 2);
-                int maxRetries = 10;
+                // 动态阈值：使用语种感知的乘数
+                int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
+                int maxRetries = options.MaxRetries!.Value;
                 int retryCount = 0;
                 bool success = false;
 
@@ -572,7 +581,7 @@ namespace AstraTTS.Core.Core
 
                 if (!success)
                 {
-                    throw new Exception($"流式 T2S 推理失败：在 {maxRetries} 次重试后仍未能生成有效的语义序列。");
+                    throw new Exception($"流式 T2S 推理失败：在 {options.MaxRetries} 次重试后仍未能生成有效的语义序列。");
                 }
             }
             finally
@@ -590,8 +599,11 @@ namespace AstraTTS.Core.Core
             long[] refSeq, float[,] refBert, float[] sslContent,
             int chunkSize,
             Action<long[], bool> onTokenChunk,  // (tokensSoFar, isFinal)
-            Action? onRetry = null)  // 重试时调用，用于清空队列
+            Action? onRetry = null,
+            PhoneLanguage[]? languageTags = null,  // 添加 languageTags
+            TtsOptions? options = null)
         {
+            options = ApplyConfig(options);
             if (_t2sEncoder == null || _firstStageDecoder == null || _stageDecoder == null)
                 throw new InvalidOperationException("T2S models not loaded.");
 
@@ -612,9 +624,9 @@ namespace AstraTTS.Core.Core
                 var x = encoderResults.First(r => r.Name == "x").AsTensor<float>().Clone();
                 var prompts = encoderResults.First(r => r.Name == "prompts").AsTensor<long>().Clone();
 
-                // 动态阈值：使用 2x 乘数兼容中英文（流式模式）
-                int minExpectedTokens = Math.Max(8, textSeq.Length * 2);
-                int maxRetries = 10;
+                // 动态阈值：使用语种感知的乘数
+                int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
+                int maxRetries = options.MaxRetries!.Value;
                 int retryCount = 0;
                 bool success = false;
 
@@ -739,29 +751,23 @@ namespace AstraTTS.Core.Core
 
                             if (isEOS) break;
                         }
+
+                        if (generatedTokens.Count >= minExpectedTokens)
+                        {
+                            success = true;
+                            break;
+                        }
+
+                        if (DebugMode) DebugLog($"[T2S Streaming] Incomplete generation ({generatedTokens.Count} < {minExpectedTokens}), retrying...");
+                        onRetry?.Invoke();
                     }
                     finally
                     {
                         activeResults?.Dispose();
                     }
-
-                    if (generatedTokens.Count > 0 && generatedTokens.Last() < 1024)
-                    {
-                        // 检查是否是因为超过最大长度而中断，而非自然 EOS
-                        if (generatedTokens.Count < minExpectedTokens) // 这里的 minExpectedTokens 是我们在外面定义的动态阈值
-                        {
-                            if (DebugMode) DebugLog($"[T2S Streaming] Incomplete generation ({generatedTokens.Count} < {minExpectedTokens}), retrying...");
-                            retryCount++;
-                            continue;
-                        }
-                    }
-
-                    success = true;
-                    break;
                 }
 
-
-                if (!success) throw new Exception($"流式 T2S 推理失败：{maxRetries} 次重试后仍未达到期望 tokens 数量 ({minExpectedTokens})");
+                if (!success) throw new Exception($"流式 T2S 推理失败：{options.MaxRetries} 次重试后仍未达到期望 tokens 数量 ({minExpectedTokens})");
             }
             finally
             {
@@ -813,10 +819,7 @@ namespace AstraTTS.Core.Core
             }
             finally
             {
-                if (stretchedSemantic != predSemantic)
-                {
-                    ArrayPool<long>.Shared.Return(stretchedSemantic);
-                }
+                // 无需归还 stretchedSemantic，因为它现在是常规分配的数组
             }
         }
 
@@ -845,7 +848,10 @@ namespace AstraTTS.Core.Core
             int newLen = (int)Math.Round(tokens.Length / speed);
             if (newLen < 1) newLen = 1;
 
-            long[] result = ArrayPool<long>.Shared.Rent(newLen);
+            // 核心修复：不能使用 ArrayPool.Rent，因为 Rent 返回的数组长度可能大于 newLen。
+            // 当传递给 DenseTensor 时，stretchedSemantic.Length 包含了多余的填充(0)，
+            // 导致 Vocoder 认为后面还有大量的语义 Token，从而产生尾部幻听噪音（"啊/呃"声）。
+            long[] result = new long[newLen];
             for (int i = 0; i < newLen; i++)
             {
                 int oldIdx = (int)Math.Floor(i * speed);
@@ -862,6 +868,8 @@ namespace AstraTTS.Core.Core
 
         public void Dispose()
         {
+            if (IsShared) return;
+
             _t2sEncoder?.Dispose();
             _firstStageDecoder?.Dispose();
             _stageDecoder?.Dispose();
@@ -869,6 +877,50 @@ namespace AstraTTS.Core.Core
             _promptEncoder?.Dispose();
             _hubert?.Dispose();
             _svModel?.Dispose();
+        }
+        /// <summary>
+        /// 根据音素的语种属性动态计算最小预期 Token 数量。
+        /// </summary>
+        private int CalculateMinExpectedTokens(long[] textSeq, PhoneLanguage[]? languageTags, TtsOptions options)
+        {
+            if (languageTags == null || languageTags.Length == 0)
+            {
+                return Math.Max(8, (int)(textSeq.Length * options.MinTokenMultiplierChinese!.Value));
+            }
+
+            double expected = 0;
+            for (int i = 0; i < textSeq.Length; i++)
+            {
+                var lang = i < languageTags.Length ? languageTags[i] : PhoneLanguage.Chinese;
+                double multiplier = lang switch
+                {
+                    PhoneLanguage.Chinese => options.MinTokenMultiplierChinese!.Value,
+                    PhoneLanguage.Japanese => options.MinTokenMultiplierJapanese!.Value,
+                    PhoneLanguage.English => options.MinTokenMultiplierEnglish!.Value,
+                    _ => options.MinTokenMultiplierOther!.Value // Punctuation/Other
+                };
+                expected += multiplier;
+            }
+
+            return Math.Max(8, (int)expected);
+        }
+
+        private TtsOptions ApplyConfig(TtsOptions? options)
+        {
+            options ??= TtsOptions.Default;
+            if (_config == null) return options;
+
+            options.DebugMode ??= _config.DebugMode;
+            options.MaxRetries ??= _config.Inference.MaxRetries;
+            options.MinTokenMultiplierChinese ??= _config.Inference.MinTokenMultiplierChinese;
+            options.MinTokenMultiplierJapanese ??= _config.Inference.MinTokenMultiplierJapanese;
+            options.MinTokenMultiplierEnglish ??= _config.Inference.MinTokenMultiplierEnglish;
+            options.MinTokenMultiplierOther ??= _config.Inference.MinTokenMultiplierOther;
+
+            // 同步 DebugMode 实例状态，以便 DebugLog 工作
+            this.DebugMode = options.DebugMode.Value;
+
+            return options;
         }
     }
 }

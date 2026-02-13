@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 using AstraTTS.Core.Core;
 
 namespace AstraTTS.Core.Config
@@ -35,7 +37,13 @@ namespace AstraTTS.Core.Config
         public string DictionariesDir => Path.Combine(SharedDir, "dictionaries");
 
         /// <summary>
-        /// V1 引擎模型基础目录
+        /// V1 引擎共享资源目录 (BERT, HuBERT 等)
+        /// </summary>
+        [JsonIgnore]
+        public string V1ExtraDir => Path.Combine(SharedDir, "v1_extra");
+
+        /// <summary>
+        /// V1 引擎音色特定模型目录
         /// </summary>
         [JsonIgnore]
         public string ModelsV1BaseDir => Path.Combine(ResourcesDir, "models_v1");
@@ -73,51 +81,82 @@ namespace AstraTTS.Core.Config
         // ============================================================
 
         [JsonIgnore]
-        public string HubertPath => Path.Combine(ModelsV1Dir, "hubert", "chinese-hubert-base_full.onnx");
+        public string HubertPath => Path.Combine(V1ExtraDir, "hubert", "chinese-hubert-base_full.onnx");
 
         [JsonIgnore]
-        public string SpeakerEncoderPath => Path.Combine(ModelsV1Dir, "speaker_encoder.onnx");
+        public string SpeakerEncoderPath => Path.Combine(V1ExtraDir, "speaker_encoder.onnx");
+
+        // V1 音色特定的 VITS 模型目录 (核心模型直接放置在音色目录下)
+        [JsonIgnore]
+        public string V1TtsDir => ModelsV1Dir;
 
         [JsonIgnore]
-        public string V1TtsDir => Path.Combine(ModelsV1Dir, "tts");
+        public string BertModelPath => Path.Combine(V1ExtraDir, "bert", "roberta.onnx");
 
         [JsonIgnore]
-        public string BertModelPath => Path.Combine(ModelsV1Dir, "bert", "roberta.onnx");
-
-        [JsonIgnore]
-        public string TokenizerJsonPath => Path.Combine(ModelsV1Dir, "bert", "tokenizer", "tokenizer.json");
+        public string TokenizerJsonPath => Path.Combine(V1ExtraDir, "bert", "tokenizer", "tokenizer.json");
 
         // ============================================================
         // 按 Avatar 获取 V1 路径
         // ============================================================
 
-        public string GetHubertPath(string avatarId) => Path.Combine(GetModelsV1Dir(avatarId), "hubert", "chinese-hubert-base_full.onnx");
-        public string GetSpeakerEncoderPath(string avatarId) => Path.Combine(GetModelsV1Dir(avatarId), "speaker_encoder.onnx");
-        public string GetV1TtsDir(string avatarId) => Path.Combine(GetModelsV1Dir(avatarId), "tts");
-        public string GetBertModelPath(string avatarId) => Path.Combine(GetModelsV1Dir(avatarId), "bert", "roberta.onnx");
-        public string GetTokenizerJsonPath(string avatarId) => Path.Combine(GetModelsV1Dir(avatarId), "bert", "tokenizer", "tokenizer.json");
+        // public string GetHubertPath(string avatarId) => HubertPath;
+        // public string GetSpeakerEncoderPath(string avatarId) => SpeakerEncoderPath;
+        // public string GetV1TtsDir(string avatarId) => GetModelsV1Dir(avatarId);
+        // public string GetBertModelPath(string avatarId) => BertModelPath;
+        // public string GetTokenizerJsonPath(string avatarId) => TokenizerJsonPath;
 
         // ============================================================
-        // 共享资源路径 (G2P 字典)
+        // 共享资源路径 (G2P 字典与模型)
         // ============================================================
 
         [JsonIgnore]
-        public string CmuDict => Path.Combine(DictionariesDir, "cmudict.dict");
+        public string G2PDir => Path.Combine(SharedDir, "g2p");
 
         [JsonIgnore]
-        public string PinyinDict => Path.Combine(DictionariesDir, "mandarin_pinyin.dict");
+        public string G2PDictsDir => Path.Combine(G2PDir, "dicts");
 
         [JsonIgnore]
-        public string ChineseG2PDict => Path.Combine(DictionariesDir, "opencpop-strict.txt");
+        public string G2PModelsDir => Path.Combine(G2PDir, "models");
 
         [JsonIgnore]
-        public string NeuralG2PModel => Path.Combine(SharedDir, "g2p", "checkpoint20.npz");
+        public string CmuDict => Path.Combine(G2PDictsDir, "english", "cmudict.dict");
+
+        [JsonIgnore]
+        public string PinyinDict => Path.Combine(G2PDictsDir, "chinese", "mandarin_pinyin.dict");
+
+        [JsonIgnore]
+        public string ChineseG2PDict => Path.Combine(G2PDictsDir, "chinese", "opencpop-strict.txt");
+
+        [JsonIgnore]
+        public string PolyphonicJson => Path.Combine(G2PDictsDir, "chinese", "polyphonic.json");
+
+        [JsonIgnore]
+        public string NeuralG2PModel => Path.Combine(G2PModelsDir, "checkpoint20.npz");
+
+        [JsonIgnore]
+        public string EnglishSpecialDict => Path.Combine(G2PDictsDir, "english", "en_special_words.txt");
+
+        /// <summary>
+        /// 英文词性标注模型目录
+        /// </summary>
+        [JsonIgnore]
+        public string EnglishPosTaggerDir => Path.Combine(G2PModelsDir, "english", "taggers", "averaged_perceptron_tagger_eng");
+
+        /// <summary>
+        /// 英文单词分割数据目录
+        /// </summary>
+        [JsonIgnore]
+        public string EnglishWordSegmentDir => Path.Combine(G2PModelsDir, "english", "wordsegment");
 
         /// <summary>
         /// 日语 OpenJTalk 词典目录
         /// </summary>
         [JsonIgnore]
-        public string JapaneseDictDir => Path.Combine(SharedDir, "g2p", "JapaneseG2P", "open_jtalk_dic_utf_8-1.11");
+        public string JapaneseDictDir => Path.Combine(G2PDictsDir, "japanese", "open_jtalk_dic_utf_8-1.11");
+
+        [JsonIgnore]
+        public string JiebaDictDir => Path.Combine(G2PDictsDir, "chinese", "jieba");
 
         // ============================================================
         // 音色 (Avatar) 配置
@@ -150,24 +189,17 @@ namespace AstraTTS.Core.Config
         /// <summary>
         /// 获取默认参考音频的完整路径和文本
         /// </summary>
-        public (string audioPath, string text)? GetDefaultReferenceAudio()
-        {
-            var avatar = GetDefaultAvatar();
-            if (avatar == null) return null;
+        // public (string audioPath, string text)? GetDefaultReferenceAudio()
+        // {
+        //     var avatar = GetDefaultAvatar();
+        //     if (avatar == null) return null;
 
-            var reference = avatar.GetDefaultReference();
-            if (reference == null) return null;
+        //     var reference = avatar.GetDefaultReference();
+        //     if (reference == null) return null;
 
-            var fullPath = reference.GetFullAudioPath(AvatarsDir, avatar.Id);
-            return (fullPath, reference.Text);
-        }
-
-        // ============================================================
-        // 参考音频 (兼容旧版配置 - 如果没有 Avatar 配置则使用)
-        // ============================================================
-
-        public string? RefAudioPath { get; set; }
-        public string RefText { get; set; } = "良宵方始，不必心急。";
+        //     var fullPath = reference.GetFullAudioPath(AvatarsDir, avatar.Id);
+        //     return (fullPath, reference.Text);
+        // }
 
         // ============================================================
         // 引擎选择
@@ -199,9 +231,19 @@ namespace AstraTTS.Core.Config
         public int InterOpNumThreads { get; set; } = 0;
 
         /// <summary>
-        /// 内存优化级别 (0=禁用, 1=基础, 2=激进)。
+        /// 图优化级别 (0=禁用, 1=基础, 2=激进)。
         /// </summary>
-        public int MemoryOptimizationLevel { get; set; } = 1;
+        public int GraphOptimizationLevel { get; set; } = 1;
+
+        /// <summary>
+        /// 推理池容量（并发数）。默认为 1。
+        /// </summary>
+        public int PoolCapacity { get; set; } = 1;
+
+        /// <summary>
+        /// 是否复用内存（共享模型 Session）。默认为 true。
+        /// </summary>
+        public bool ReuseMemory { get; set; } = true;
 
         // ============================================================
         // 合成参数
@@ -233,7 +275,6 @@ namespace AstraTTS.Core.Config
 
         public int StreamingChunkSize { get; set; } = 22;
         public int StreamingPreBufferChunks { get; set; } = 2;
-        public int StreamingChunkTokens { get; set; } = 24;
         public bool StreamingMode { get; set; } = true;
 
         // ============================================================
@@ -242,6 +283,45 @@ namespace AstraTTS.Core.Config
 
         public bool WasapiExclusiveMode { get; set; } = true;
         public int LockFreeBufferSize { get; set; } = 65536 * 32;
+
+        // ============================================================
+        // 调试与推理配置
+        // ============================================================
+
+        /// <summary>
+        /// 是否启用调试模式。启用后会输出详细的推理日志。
+        /// </summary>
+        public bool DebugMode { get; set; } = false;
+
+        public InferenceConfig Inference { get; set; } = new InferenceConfig();
+
+        public class InferenceConfig
+        {
+            /// <summary>
+            /// 最大重试次数。当生成的 Token 数不足时引擎会尝试重新生成。
+            /// </summary>
+            public int MaxRetries { get; set; } = 3;
+
+            /// <summary>
+            /// 中文最小预期 Token 系数 (默认 2.1)。数值越大重试概率越高。
+            /// </summary>
+            public float MinTokenMultiplierChinese { get; set; } = 2.1f;
+
+            /// <summary>
+            /// 日语最小预期 Token 系数 (默认 2.0)。
+            /// </summary>
+            public float MinTokenMultiplierJapanese { get; set; } = 2.0f;
+
+            /// <summary>
+            /// 英语最小预期 Token 系数 (默认 1.3)。
+            /// </summary>
+            public float MinTokenMultiplierEnglish { get; set; } = 1.3f;
+
+            /// <summary>
+            /// 标点/其它最小预期 Token 系数 (默认 0.5)。
+            /// </summary>
+            public float MinTokenMultiplierOther { get; set; } = 0.5f;
+        }
 
         // ============================================================
         // G2P 配置
@@ -262,9 +342,9 @@ namespace AstraTTS.Core.Config
             public int PriorityMode { get; set; } = 0;
 
             /// <summary>
-            /// 是否启用数字转中文/英文规格化
+            /// 允许的语言列表 (最多 2 种)。可选值: "zh", "en", "ja"
             /// </summary>
-            public bool EnableNormalization { get; set; } = true;
+            public List<string> Languages { get; set; } = new() { "zh", "en" };
         }
 
         // ============================================================
@@ -285,30 +365,63 @@ namespace AstraTTS.Core.Config
         public static string? LoadedPath => _loadedPath;
 
         [JsonIgnore]
-        public static string DefaultConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+        [YamlIgnore]
+        public static string DefaultConfigName => "config.yaml";
+
+        [JsonIgnore]
+        [YamlIgnore]
+        public static string LegacyConfigName => "config.json";
+
+        public static string DefaultConfigPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DefaultConfigName);
 
         public static TTSConfig Load()
         {
-            return LoadOrCreate(DefaultConfigPath);
+            // Try CWD first
+            if (File.Exists(DefaultConfigName)) return Load(DefaultConfigName);
+            if (File.Exists(LegacyConfigName)) return Load(LegacyConfigName);
+
+            // Then try AppDir
+            var appDirDefault = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, DefaultConfigName);
+            if (File.Exists(appDirDefault)) return Load(appDirDefault);
+
+            var appDirLegacy = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, LegacyConfigName);
+            if (File.Exists(appDirLegacy)) return Load(appDirLegacy);
+
+            // Fallback to default path (will create if LoadOrCreate is used)
+            return LoadOrCreate(appDirDefault);
         }
 
         public static TTSConfig Load(string path)
         {
-            _loadedPath = path;
-            if (!File.Exists(path)) return new TTSConfig();
+            _loadedPath = Path.GetFullPath(path);
+            if (!File.Exists(_loadedPath)) return new TTSConfig();
             try
             {
-                var json = File.ReadAllText(path);
-                var options = new System.Text.Json.JsonSerializerOptions
+                var content = File.ReadAllText(_loadedPath);
+                var extension = Path.GetExtension(_loadedPath).ToLower();
+
+                if (extension == ".yaml" || extension == ".yml")
                 {
-                    PropertyNameCaseInsensitive = true,
-                    ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip
-                };
-                return System.Text.Json.JsonSerializer.Deserialize<TTSConfig>(json, options) ?? new TTSConfig();
+                    var deserializer = new DeserializerBuilder()
+                        .WithNamingConvention(PascalCaseNamingConvention.Instance)
+                        .IgnoreUnmatchedProperties()
+                        .Build();
+                    return deserializer.Deserialize<TTSConfig>(content) ?? new TTSConfig();
+                }
+                else
+                {
+                    // Fallback to JSON
+                    var options = new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true,
+                        ReadCommentHandling = System.Text.Json.JsonCommentHandling.Skip
+                    };
+                    return System.Text.Json.JsonSerializer.Deserialize<TTSConfig>(content, options) ?? new TTSConfig();
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error loading config: {ex.Message}, using defaults.");
+                Console.WriteLine($"Error loading config from {path}: {ex.Message}, using defaults.");
                 return new TTSConfig();
             }
         }
@@ -336,9 +449,21 @@ namespace AstraTTS.Core.Config
 
         public void Save(string path)
         {
-            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-            var json = System.Text.Json.JsonSerializer.Serialize(this, options);
-            File.WriteAllText(path, json);
+            var extension = Path.GetExtension(path).ToLower();
+            if (extension == ".yaml" || extension == ".yml")
+            {
+                var serializer = new SerializerBuilder()
+                    .WithNamingConvention(PascalCaseNamingConvention.Instance)
+                    .Build();
+                var yaml = serializer.Serialize(this);
+                File.WriteAllText(path, yaml);
+            }
+            else
+            {
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                var json = System.Text.Json.JsonSerializer.Serialize(this, options);
+                File.WriteAllText(path, json);
+            }
         }
 
         // ============================================================

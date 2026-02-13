@@ -59,7 +59,7 @@ namespace AstraTTS.Core.Utils
                 // 我们通过 device.AudioClient 获取 IAudioClient，然后 QueryInterface 获取 IAudioClient3
                 var audioClient = device.AudioClient;
                 var iid = IID_IAudioClient3;
-                Marshal.QueryInterface(Marshal.GetIUnknownForObject(audioClient), ref iid, out var comPtr);
+                Marshal.QueryInterface(Marshal.GetIUnknownForObject(audioClient), in iid, out var comPtr);
 
                 if (comPtr == IntPtr.Zero)
                 {
@@ -73,6 +73,7 @@ namespace AstraTTS.Core.Utils
                 // 3. 获取混合格式 (引擎原生格式)
                 client3.GetMixFormat(out var formatPtr);
                 var format = Marshal.PtrToStructure<WaveFormat>(formatPtr);
+                if (format == null) return;
 
                 // 4. 查询驱动支持的最小周期 (Period)
                 client3.GetSharedModeEnginePeriod(format, out _, out _, out uint minPeriod, out _);

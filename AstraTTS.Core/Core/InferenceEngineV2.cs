@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Diagnostics;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using AstraTTS.Core.Frontend.G2P.Common;
 
 namespace AstraTTS.Core.Core
 {
@@ -15,15 +16,19 @@ namespace AstraTTS.Core.Core
     /// </summary>
     public class InferenceEngineV2 : IDisposable
     {
-        // ============================================================
-        // 调试控制
-        // ============================================================
-        public static bool DebugMode { get; set; } = false;
+        public bool DebugMode { get; set; } = false;
 
-        private static void DebugLog(string message)
+        /// <summary>
+        /// 是否为共享模式。如果是共享模式，Dispose 不会释放 Session。
+        /// </summary>
+        public bool IsShared { get; set; } = false;
+
+        private void DebugLog(string message)
         {
             if (DebugMode) Console.WriteLine($"[V2] {message}");
         }
+
+        private AstraTTS.Core.Config.TTSConfig? _config;
 
         // ============================================================
         // ONNX Sessions
@@ -60,27 +65,32 @@ namespace AstraTTS.Core.Core
         // ============================================================
         // Session 配置
         // ============================================================
-        private SessionOptions CreateSessionOptions(bool useDirectML)
+        public SessionOptions CreateSessionOptions(AstraTTS.Core.Config.TTSConfig config)
         {
             var options = new SessionOptions();
 
             // 线程配置
-            options.IntraOpNumThreads = Environment.ProcessorCount / 2;
-            options.InterOpNumThreads = 1;
+            options.IntraOpNumThreads = config.IntraOpNumThreads;
+            options.InterOpNumThreads = config.InterOpNumThreads;
             options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
 
-            // 禁用图优化以避免 Shape Inference 错误
-            // 问题: 某些模型在优化时遇到 Cannot parse data from external tensors 错误
-            options.GraphOptimizationLevel = GraphOptimizationLevel.ORT_DISABLE_ALL;
+            // 图优化级别
+            options.GraphOptimizationLevel = config.GraphOptimizationLevel switch
+            {
+                0 => GraphOptimizationLevel.ORT_DISABLE_ALL,
+                1 => GraphOptimizationLevel.ORT_ENABLE_BASIC,
+                2 => GraphOptimizationLevel.ORT_ENABLE_ALL,
+                _ => GraphOptimizationLevel.ORT_DISABLE_ALL // V2 默认禁用以兼容旧模型
+            };
 
             // 内存优化
             options.EnableCpuMemArena = true;
 
-            if (useDirectML)
+            if (config.UseDirectML)
             {
                 options.EnableMemoryPattern = false;
                 options.AppendExecutionProvider_DML(0);
-                Console.WriteLine("[V2] DirectML 加速已启用");
+                DebugLog("DirectML 加速已启用");
             }
             else
             {
@@ -93,8 +103,12 @@ namespace AstraTTS.Core.Core
         // ============================================================
         // 模型加载
         // ============================================================
-        public void LoadModels(string modelDir, bool useDirectML = false)
+        public void LoadModels(string modelDir, AstraTTS.Core.Config.TTSConfig config)
         {
+            _config = config;
+            this.DebugMode = config.DebugMode;
+            var options = CreateSessionOptions(config);
+
             var sw = Stopwatch.StartNew();
             Console.WriteLine($"[V2] 加载模型目录: {modelDir}");
 
@@ -106,8 +120,6 @@ namespace AstraTTS.Core.Core
             _isProVersion = _modelVersion.Contains("Pro", StringComparison.OrdinalIgnoreCase);
 
             Console.WriteLine($"[V2] 模型版本: {_modelVersion}, KV-Cache 最大长度: {_maxKvLen}");
-
-            var options = CreateSessionOptions(useDirectML);
 
             // 并行加载所有模型
             var tasks = new List<Action>
@@ -162,6 +174,27 @@ namespace AstraTTS.Core.Core
 
             sw.Stop();
             Console.WriteLine($"[V2] 模型加载完成，耗时: {sw.ElapsedMilliseconds}ms");
+        }
+
+        /// <summary>
+        /// 从另一个实例共享模型会话
+        /// </summary>
+        public void ShareModelsFrom(InferenceEngineV2 other)
+        {
+            _sslSession = other._sslSession;
+            _bertSession = other._bertSession;
+            _vqEncoderSession = other._vqEncoderSession;
+            _gptEncoderSession = other._gptEncoderSession;
+            _gptStepSession = other._gptStepSession;
+            _sovitsSession = other._sovitsSession;
+            _svSession = other._svSession;
+            _modelConfig = other._modelConfig;
+            _maxKvLen = other._maxKvLen;
+            _kvCacheShape = other._kvCacheShape;
+            _modelVersion = other._modelVersion;
+            _isProVersion = other._isProVersion;
+            _config = other._config;
+            IsShared = true;
         }
 
         // ============================================================
@@ -477,25 +510,22 @@ namespace AstraTTS.Core.Core
         /// <param name="speed">语速 (0.5-2.0)</param>
         /// <param name="chunkSize">每多少 token 输出一次</param>
         /// <param name="onAudioChunk">音频块回调</param>
-        public void InferStream(
-            long[] refPhonemeIds,
-            float[,] refBertFeature,
-            long[] phonemeIds,
-            float[,] bertFeature,
-            long[] promptCodes,
-            float[,] referSpec,
-            float[]? svEmb,
-            int topK = 15,
-            float temperature = 1.0f,
-            float noiseScale = 0.35f,
-            float speed = 1.0f,
-            int chunkSize = 24,
-            Action<float[], bool>? onAudioChunk = null)
+        public async IAsyncEnumerable<float[]> InferStream(
+            long[] refPhonemeIds, float[,] refBertFeature,
+            long[] phonemeIds, float[,] bertFeature,
+            long[] promptCodes, float[,] referSpec, float[]? svEmb,
+            PhoneLanguage[]? languageTags = null, TtsOptions? options = null,
+            int topK = 15, float temperature = 1.0f, float noiseScale = 0.35f,
+            float speed = 1.0f, int chunkSize = 24)
         {
+            options = ApplyConfig(options);
             if (_gptEncoderSession == null || _gptStepSession == null || _sovitsSession == null)
                 throw new InvalidOperationException("模型未加载");
 
             var sw = Stopwatch.StartNew();
+
+            // 拼接参考和目标词 ID (用于 SoVITS)
+            var generatedTokens = new List<long>();
 
             // ========== 1. GPT Encoder ==========
             DebugLog("运行 GPT Encoder...");
@@ -547,77 +577,107 @@ namespace AstraTTS.Core.Core
 
             DebugLog($"GPT Encoder 完成，耗时: {sw.ElapsedMilliseconds}ms");
 
-            // ========== 2. GPT Step Loop ==========
-            var generatedTokens = new List<long>();
-            long currentToken = SampleTopK(topkValues, topkIndices, temperature);
-            generatedTokens.Add(currentToken);
+            // ========== 2. GPT Step Loop with Retry ==========
+            int minExpectedTokens = CalculateMinExpectedTokens(phonemeIds, languageTags, options);
+            int maxRetries = options.MaxRetries!.Value;
+            int retryCount = 0;
+            bool success = false;
 
-            int lastEmitPosition = 0;
-            const int maxSteps = 1500;
-            const long EOS_TOKEN = 1024;
-
-            // 获取 KV Cache 维度信息
-            var kCacheTensor = new DenseTensor<float>(kCache, GetKvCacheShape());
-            var vCacheTensor = new DenseTensor<float>(vCache, GetKvCacheShape());
-
-            int lastAudioLength = 0;
-            for (int step = 0; step < maxSteps; step++)
+            while (retryCount < maxRetries)
             {
-                var stepInputs = new List<NamedOnnxValue>
+                retryCount++;
+                generatedTokens.Clear();
+                GPT_KV_Cache? gptKvCache = null;
+                try
                 {
-                    NamedOnnxValue.CreateFromTensor("samples", new DenseTensor<long>(new[] { currentToken }, new[] { 1, 1 })),
-                    NamedOnnxValue.CreateFromTensor("k_cache", kCacheTensor),
-                    NamedOnnxValue.CreateFromTensor("v_cache", vCacheTensor),
-                    NamedOnnxValue.CreateFromTensor("x_len", new DenseTensor<long>(xLen, new[] { 1 })),
-                    NamedOnnxValue.CreateFromTensor("y_len", new DenseTensor<long>(yLen, new[] { 1 })),
-                    NamedOnnxValue.CreateFromTensor("idx", new DenseTensor<long>(new[] { (long)step }, new[] { 1 }))
-                };
+                    if (DebugMode) DebugLog($"[V2 Stream] Retry {retryCount}/{maxRetries}, clearing previous audio...");
 
-                using var stepResults = _gptStepSession.Run(stepInputs);
+                    long currentToken = SampleTopK(topkValues, topkIndices, temperature);
+                    generatedTokens.Add(currentToken);
 
-                topkValues = stepResults.First(r => r.Name == "topk_values").AsTensor<float>().ToArray();
-                topkIndices = stepResults.First(r => r.Name == "topk_indices").AsTensor<long>().ToArray();
+                    int lastEmitPosition = 0;
+                    int lastAudioLength = 0;
+                    const int maxSteps = 1500;
+                    const long EOS_TOKEN = 1024;
 
-                // 更新 KV Cache
-                var newKCache = stepResults.First(r => r.Name == "k_cache_new").AsTensor<float>();
-                var newVCache = stepResults.First(r => r.Name == "v_cache_new").AsTensor<float>();
-                kCacheTensor = newKCache.Clone() as DenseTensor<float> ?? throw new Exception("KV Cache 克隆失败");
-                vCacheTensor = newVCache.Clone() as DenseTensor<float> ?? throw new Exception("KV Cache 克隆失败");
+                    gptKvCache = new GPT_KV_Cache(kCache, vCache, GetKvCacheShape());
 
-                currentToken = SampleTopK(topkValues, topkIndices, temperature);
-                generatedTokens.Add(currentToken);
-
-                // 检查是否应该输出音频块
-                bool isEOS = currentToken >= EOS_TOKEN;
-                bool shouldEmit = (generatedTokens.Count - lastEmitPosition) >= chunkSize;
-
-                if ((shouldEmit || isEOS) && onAudioChunk != null)
-                {
-                    var tokensForVocoder = generatedTokens.Where(t => t < EOS_TOKEN).ToArray();
-                    if (tokensForVocoder.Length > 0)
+                    for (int step = 0; step < maxSteps; step++)
                     {
-                        // 包含语速控制的 SoVITS
-                        var fullAudio = RunSoVITS(tokensForVocoder, phonemeIds, referSpec, svEmb, noiseScale, speed);
-
-                        // 关键：计算增量音频
-                        int newSamplesCount = fullAudio.Length - lastAudioLength;
-                        if (newSamplesCount > 0)
+                        var stepInputs = new List<NamedOnnxValue>
                         {
-                            float[] chunk = new float[newSamplesCount];
-                            Array.Copy(fullAudio, lastAudioLength, chunk, 0, newSamplesCount);
-                            onAudioChunk(chunk, isEOS);
-                            lastAudioLength = fullAudio.Length;
-                        }
-                        else if (isEOS)
+                            NamedOnnxValue.CreateFromTensor("samples", new DenseTensor<long>(new[] { currentToken }, new[] { 1, 1 })),
+                            NamedOnnxValue.CreateFromTensor("k_cache", gptKvCache.KCacheTensor),
+                            NamedOnnxValue.CreateFromTensor("v_cache", gptKvCache.VCacheTensor),
+                            NamedOnnxValue.CreateFromTensor("x_len", new DenseTensor<long>(xLen, new[] { 1 })),
+                            NamedOnnxValue.CreateFromTensor("y_len", new DenseTensor<long>(yLen, new[] { 1 })),
+                            NamedOnnxValue.CreateFromTensor("idx", new DenseTensor<long>(new[] { (long)step }, new[] { 1 }))
+                        };
+
+                        using var stepResults = _gptStepSession.Run(stepInputs);
+
+                        var topkValuesNext = stepResults.First(r => r.Name == "topk_values").AsTensor<float>().ToArray();
+                        var topkIndicesNext = stepResults.First(r => r.Name == "topk_indices").AsTensor<long>().ToArray();
+
+                        var newKCache = stepResults.First(r => r.Name == "k_cache_new").AsTensor<float>();
+                        var newVCache = stepResults.First(r => r.Name == "v_cache_new").AsTensor<float>();
+                        gptKvCache.Update(newKCache, newVCache);
+
+                        currentToken = SampleTopK(topkValuesNext, topkIndicesNext, temperature);
+                        generatedTokens.Add(currentToken);
+
+                        // 检查是否应该输出音频块
+                        bool isEOS = currentToken >= EOS_TOKEN;
+                        bool shouldEmit = (generatedTokens.Count - lastEmitPosition) >= chunkSize;
+
+                        if ((shouldEmit || isEOS))
                         {
-                            onAudioChunk(Array.Empty<float>(), true);
+                            var tokensForVocoder = generatedTokens.Where(t => t < EOS_TOKEN).ToArray();
+                            if (tokensForVocoder.Length > 0)
+                            {
+                                var fullAudio = RunSoVITS(tokensForVocoder, phonemeIds, referSpec, svEmb, noiseScale, speed);
+                                int newSamplesCount = fullAudio.Length - lastAudioLength;
+                                if (newSamplesCount > 0)
+                                {
+                                    float[] chunk = new float[newSamplesCount];
+                                    Array.Copy(fullAudio, lastAudioLength, chunk, 0, newSamplesCount);
+                                    await foreach (var item in AsyncEnumerable.Repeat(chunk, 1))
+                                    {
+                                        yield return item;
+                                    }
+                                    lastAudioLength = fullAudio.Length;
+                                }
+                                else if (isEOS && (generatedTokens.Count >= minExpectedTokens))
+                                {
+                                    await foreach (var item in AsyncEnumerable.Repeat(Array.Empty<float>(), 1))
+                                    {
+                                        yield return item;
+                                    }
+                                }
+
+                                lastEmitPosition = generatedTokens.Count;
+                            }
                         }
 
-                        lastEmitPosition = generatedTokens.Count;
+                        if (isEOS) break;
                     }
-                }
 
-                if (isEOS) break;
+                    if (generatedTokens.Count >= minExpectedTokens)
+                    {
+                        success = true;
+                        break;
+                    }
+                    if (DebugMode) DebugLog($"[InferStream] Insufficient tokens ({generatedTokens.Count} < {minExpectedTokens}), retrying {retryCount}/{maxRetries}...");
+                }
+                finally
+                {
+                    gptKvCache?.Dispose();
+                }
+            }
+
+            if (!success)
+            {
+                throw new Exception($"流式推理失败：在 {options.MaxRetries} 次重试后仍未能生成有效的语义序列。");
             }
 
             sw.Stop();
@@ -635,43 +695,36 @@ namespace AstraTTS.Core.Core
         /// <param name="topK">Top-K 采样</param>
         /// <param name="temperature">采样温度</param>
         public long[] InferTokens(
-            long[] refPhonemeIds,
-            float[,] refBertFeature,
-            long[] phonemeIds,
-            float[,] bertFeature,
+            long[] refPhonemeIds, float[,] refBertFeature,
+            long[] phonemeIds, float[,] bertFeature,
             long[] promptCodes,
-            int topK = 15,
-            float temperature = 1.0f)
+            PhoneLanguage[]? languageTags = null, TtsOptions? options = null,
+            int topK = 15, float temperature = 1.0f)
         {
+            options = ApplyConfig(options);
             if (_gptEncoderSession == null || _gptStepSession == null)
                 throw new InvalidOperationException("模型未加载");
 
-            // 拼接参考和目标音素 (Python: phones1 + phones2)
+            // 拼接参考和目标音素
             var allPhonemeIds = refPhonemeIds.Concat(phonemeIds).ToArray();
 
-            // 拼接参考和目标 BERT 特征 (Python: concatenate([bert1, bert2], axis=1))
+            // 拼接参考和目标 BERT 特征
             int bertDim = bertFeature.GetLength(0);  // 1024
             int refBertLen = refBertFeature.GetLength(1);
             int targetBertLen = bertFeature.GetLength(1);
             int totalBertLen = refBertLen + targetBertLen;
 
             var allBertFeature = new float[bertDim, totalBertLen];
-            // 复制参考 BERT
             for (int d = 0; d < bertDim; d++)
                 for (int t = 0; t < refBertLen; t++)
                     allBertFeature[d, t] = refBertFeature[d, t];
-            // 复制目标 BERT
             for (int d = 0; d < bertDim; d++)
                 for (int t = 0; t < targetBertLen; t++)
                     allBertFeature[d, refBertLen + t] = bertFeature[d, t];
 
-            DebugLog($"音素拼接: ref={refPhonemeIds.Length} + target={phonemeIds.Length} = {allPhonemeIds.Length}");
-            DebugLog($"BERT 拼接: ref={refBertLen} + target={targetBertLen} = {totalBertLen}");
-
             int textLen = allPhonemeIds.Length;
             int promptLen = promptCodes.Length;
 
-            // GPT Encoder
             var encoderInputs = new List<NamedOnnxValue>
             {
                 NamedOnnxValue.CreateFromTensor("phoneme_ids", new DenseTensor<long>(allPhonemeIds, new[] { 1, textLen })),
@@ -692,80 +745,76 @@ namespace AstraTTS.Core.Core
                 yLen = encoderResults.First(r => r.Name == "y_len").AsTensor<long>().ToArray();
             }
 
-            // GPT Step Loop
-            var generatedTokens = new List<long>();
-            long currentToken = SampleTopK(topkValues, topkIndices, temperature);
-            generatedTokens.Add(currentToken);
+            int minExpectedTokens = CalculateMinExpectedTokens(phonemeIds, languageTags, options);
+            int maxRetries = options.MaxRetries!.Value;
+            int retryCount = 0;
+            bool success = false;
+            long[]? finalResult = null;
 
-            DebugLog($"第一个采样 token: {currentToken}, TopK 前5: [{string.Join(", ", topkIndices.Take(5))}]");
-
-            var kCacheTensor = new DenseTensor<float>(kCache, GetKvCacheShape());
-            var vCacheTensor = new DenseTensor<float>(vCache, GetKvCacheShape());
-
-            const int maxSteps = 1500;
-            const long EOS_TOKEN = 1024;
-
-            for (int step = 0; step < maxSteps; step++)
+            while (retryCount < maxRetries)
             {
-                var stepInputs = new List<NamedOnnxValue>
+                retryCount++;
+                var generatedTokens = new List<long>();
+                long currentToken = SampleTopK(topkValues.ToArray(), topkIndices.ToArray(), temperature);
+                generatedTokens.Add(currentToken);
+
+                using var gptKvCache = new GPT_KV_Cache(kCache, vCache, GetKvCacheShape());
+
+                const int maxSteps = 1500;
+                const long EOS_TOKEN = 1024;
+
+                for (int step = 0; step < maxSteps; step++)
                 {
-                    NamedOnnxValue.CreateFromTensor("samples", new DenseTensor<long>(new[] { currentToken }, new[] { 1, 1 })),
-                    NamedOnnxValue.CreateFromTensor("k_cache", kCacheTensor),
-                    NamedOnnxValue.CreateFromTensor("v_cache", vCacheTensor),
-                    NamedOnnxValue.CreateFromTensor("x_len", new DenseTensor<long>(xLen, new[] { 1 })),
-                    NamedOnnxValue.CreateFromTensor("y_len", new DenseTensor<long>(yLen, new[] { 1 })),
-                    NamedOnnxValue.CreateFromTensor("idx", new DenseTensor<long>(new[] { (long)step }, new[] { 1 }))
-                };
+                    var stepInputs = new List<NamedOnnxValue>
+                    {
+                        NamedOnnxValue.CreateFromTensor("samples", new DenseTensor<long>(new[] { currentToken }, new[] { 1, 1 })),
+                        NamedOnnxValue.CreateFromTensor("k_cache", gptKvCache.KCacheTensor),
+                        NamedOnnxValue.CreateFromTensor("v_cache", gptKvCache.VCacheTensor),
+                        NamedOnnxValue.CreateFromTensor("x_len", new DenseTensor<long>(xLen, new[] { 1 })),
+                        NamedOnnxValue.CreateFromTensor("y_len", new DenseTensor<long>(yLen, new[] { 1 })),
+                        NamedOnnxValue.CreateFromTensor("idx", new DenseTensor<long>(new[] { (long)step }, new[] { 1 }))
+                    };
 
-                using var stepResults = _gptStepSession.Run(stepInputs);
+                    using var stepResults = _gptStepSession.Run(stepInputs);
 
-                topkValues = stepResults.First(r => r.Name == "topk_values").AsTensor<float>().ToArray();
-                topkIndices = stepResults.First(r => r.Name == "topk_indices").AsTensor<long>().ToArray();
+                    var topkValuesNext = stepResults.First(r => r.Name == "topk_values").AsTensor<float>().ToArray();
+                    var topkIndicesNext = stepResults.First(r => r.Name == "topk_indices").AsTensor<long>().ToArray();
 
-                var newKCache = stepResults.First(r => r.Name == "k_cache_new").AsTensor<float>();
-                var newVCache = stepResults.First(r => r.Name == "v_cache_new").AsTensor<float>();
-                kCacheTensor = newKCache.Clone() as DenseTensor<float> ?? throw new Exception("Clone failed");
-                vCacheTensor = newVCache.Clone() as DenseTensor<float> ?? throw new Exception("Clone failed");
+                    var newKCache = stepResults.First(r => r.Name == "k_cache_new").AsTensor<float>();
+                    var newVCache = stepResults.First(r => r.Name == "v_cache_new").AsTensor<float>();
+                    gptKvCache.Update(newKCache, newVCache);
 
-                currentToken = SampleTopK(topkValues, topkIndices, temperature);
-
-                if (step < 5 || currentToken >= EOS_TOKEN)
-                {
-                    DebugLog($"Step {step}: token={currentToken}, top5=[{string.Join(",", topkIndices.Take(5))}]");
+                    currentToken = SampleTopK(topkValuesNext, topkIndicesNext, temperature);
+                    if (currentToken >= EOS_TOKEN) break;
+                    generatedTokens.Add(currentToken);
                 }
 
-                if (currentToken >= EOS_TOKEN)
+                if (generatedTokens.Count >= minExpectedTokens)
                 {
-                    DebugLog($"EOS 检测到，总共生成 {generatedTokens.Count} tokens");
+                    success = true;
+                    finalResult = generatedTokens.ToArray();
                     break;
                 }
-                generatedTokens.Add(currentToken);
+                if (DebugMode) DebugLog($"[InferTokens] Insufficient tokens ({generatedTokens.Count} < {minExpectedTokens}), retrying {retryCount}/{maxRetries}...");
             }
 
-            // 设置最后一个 token 为 0 (匹配 Python)
-            var result = generatedTokens.ToArray();
-            if (result.Length > 0)
+            if (!success || finalResult == null)
             {
-                result[result.Length - 1] = 0;
+                throw new Exception($"推理失败：在 {options.MaxRetries} 次重试后仍未能生成有效的语义序列。");
             }
 
-            return result;
+            // 设置最后一个 token 为 0
+            if (finalResult.Length > 0) finalResult[finalResult.Length - 1] = 0;
+            return finalResult;
         }
 
         // ============================================================
         // SoVITS 音频合成
         // ============================================================
-        public float[] RunSoVITS(
-            long[] predSemantic,
-            long[] textSeq,
-            float[,] referSpec,
-            float[]? svEmb,
-            float noiseScale = 0.35f,
-            float speed = 1.0f)
+        public float[] RunSoVITS(long[] predSemantic, long[] textSeq, float[,] referSpec, float[]? svEmb, float noiseScale = 0.35f, float speed = 1.0f)
         {
             if (_sovitsSession == null) throw new InvalidOperationException("SoVITS 未加载");
 
-            // 1. 语速控制：通过语义 Token 插值实现（相比波形 OLA 更加稳定，不影响音调）
             if (Math.Abs(speed - 1.0f) > 0.01f)
             {
                 DebugLog($"执行语义 Token 插值变速: {speed}x");
@@ -777,95 +826,119 @@ namespace AstraTTS.Core.Core
 
             var inputs = new List<NamedOnnxValue>
             {
-                NamedOnnxValue.CreateFromTensor("pred_semantic",
-                    new DenseTensor<long>(predSemantic, new[] { 1, 1, predSemantic.Length })),
-                NamedOnnxValue.CreateFromTensor("text_seq",
-                    new DenseTensor<long>(textSeq, new[] { 1, textSeq.Length })),
-                NamedOnnxValue.CreateFromTensor("refer_spec",
-                    new DenseTensor<float>(Flatten(referSpec), new[] { 1, specDim, specLen })),
-                NamedOnnxValue.CreateFromTensor("noise_scale",
-                    new DenseTensor<float>(new[] { noiseScale }, new[] { 1 }))
+                NamedOnnxValue.CreateFromTensor("pred_semantic", new DenseTensor<long>(predSemantic, new[] { 1, 1, predSemantic.Length })),
+                NamedOnnxValue.CreateFromTensor("text_seq", new DenseTensor<long>(textSeq, new[] { 1, textSeq.Length })),
+                NamedOnnxValue.CreateFromTensor("refer_spec", new DenseTensor<float>(Flatten(referSpec), new[] { 1, specDim, specLen })),
+                NamedOnnxValue.CreateFromTensor("noise_scale", new DenseTensor<float>(new[] { noiseScale }, new[] { 1 }))
             };
 
-            // speed: 只要模型有这个输入就传 1.0，防止模型内部尝试进行不完整的变速
             if (_sovitsSession.InputMetadata.ContainsKey("speed"))
             {
-                inputs.Add(NamedOnnxValue.CreateFromTensor("speed",
-                    new DenseTensor<float>(new[] { 1.0f }, new[] { 1 })));
+                inputs.Add(NamedOnnxValue.CreateFromTensor("speed", new DenseTensor<float>(new[] { 1.0f }, new[] { 1 })));
             }
 
-            // sv_emb: 根据模型元数据判断是否需要传入
             if (_sovitsSession.InputMetadata.ContainsKey("sv_emb"))
             {
-                const int svEmbDim = 20480; // V2ProPlus 的嵌入维度
-                if (svEmb != null && svEmb.Length == svEmbDim)
-                {
-                    inputs.Add(NamedOnnxValue.CreateFromTensor("sv_emb",
-                        new DenseTensor<float>(svEmb, new[] { 1, svEmb.Length })));
-                }
-                else
-                {
-                    // 如果没有提供 sv_emb，提供一个全零的占位符
-                    DebugLog("⚠️ sv_emb 未提供或维度不匹配，使用全零占位符");
-                    var zeroEmb = new float[svEmbDim];
-                    inputs.Add(NamedOnnxValue.CreateFromTensor("sv_emb",
-                        new DenseTensor<float>(zeroEmb, new[] { 1, svEmbDim })));
-                }
+                const int svEmbDim = 20480;
+                var emb = (svEmb != null && svEmb.Length == svEmbDim) ? svEmb : new float[svEmbDim];
+                inputs.Add(NamedOnnxValue.CreateFromTensor("sv_emb", new DenseTensor<float>(emb, new[] { 1, svEmbDim })));
             }
 
             using var results = _sovitsSession.Run(inputs);
-            var audio = results.First().AsTensor<float>().ToArray();
-
-            DebugLog($"SoVITS 输出: {audio.Length} 采样点");
-
-            return audio;
+            return results.First().AsTensor<float>().ToArray();
         }
 
         // ============================================================
-        // 辅助方法
+        // 辅助方法与类
         // ============================================================
-        private int[] GetKvCacheShape()
-        {
-            // 使用从 gpt_step 模型动态读取的形状
-            return _kvCacheShape;
-        }
+        private int[] GetKvCacheShape() => _kvCacheShape;
 
         private static float[] Flatten(float[,] array)
         {
-            int rows = array.GetLength(0);
-            int cols = array.GetLength(1);
+            int rows = array.GetLength(0), cols = array.GetLength(1);
             float[] flat = new float[rows * cols];
             Buffer.BlockCopy(array, 0, flat, 0, flat.Length * sizeof(float));
             return flat;
         }
 
-        /// <summary>
-        /// 语义 Token 插值 (Nearest Neighbor)
-        /// 通过在 Token 层级进行拉伸，实现不改变音调的变速
-        /// </summary>
         private long[] StretchSemanticTokens(long[] tokens, float speed)
         {
             if (tokens == null || tokens.Length == 0) return tokens!;
-
-            int newLen = (int)Math.Round(tokens.Length / speed);
-            if (newLen < 1) newLen = 1;
-
+            int newLen = Math.Max(1, (int)Math.Round(tokens.Length / speed));
             long[] result = new long[newLen];
             for (int i = 0; i < newLen; i++)
             {
-                // 计算原索引，使用最近邻
                 int oldIdx = (int)Math.Floor(i * speed);
-                if (oldIdx >= tokens.Length) oldIdx = tokens.Length - 1;
-                result[i] = tokens[oldIdx];
+                result[i] = tokens[Math.Min(oldIdx, tokens.Length - 1)];
             }
             return result;
         }
 
-        // ============================================================
-        // Dispose
-        // ============================================================
+        /// <summary>
+        /// 根据音素的语种属性动态计算最小预期 Token 数量。
+        /// </summary>
+        private int CalculateMinExpectedTokens(long[] phonemeIds, PhoneLanguage[]? languageTags, TtsOptions options)
+        {
+            if (languageTags == null || languageTags.Length == 0)
+                return Math.Max(8, (int)(phonemeIds.Length * (double)options.MinTokenMultiplierChinese!.Value));
+
+            double expected = 0;
+            for (int i = 0; i < phonemeIds.Length; i++)
+            {
+                var lang = i < languageTags.Length ? languageTags[i] : PhoneLanguage.Chinese;
+                expected += lang switch
+                {
+                    PhoneLanguage.Chinese => (double)options.MinTokenMultiplierChinese!.Value,
+                    PhoneLanguage.Japanese => (double)options.MinTokenMultiplierJapanese!.Value,
+                    PhoneLanguage.English => (double)options.MinTokenMultiplierEnglish!.Value,
+                    _ => (double)options.MinTokenMultiplierOther!.Value
+                };
+            }
+            return Math.Max(8, (int)expected);
+        }
+
+        private TtsOptions ApplyConfig(TtsOptions? options)
+        {
+            options ??= TtsOptions.Default;
+            if (_config == null) return options;
+
+            options.DebugMode ??= _config.DebugMode;
+            options.MaxRetries ??= _config.Inference.MaxRetries;
+            options.MinTokenMultiplierChinese ??= _config.Inference.MinTokenMultiplierChinese;
+            options.MinTokenMultiplierJapanese ??= _config.Inference.MinTokenMultiplierJapanese;
+            options.MinTokenMultiplierEnglish ??= _config.Inference.MinTokenMultiplierEnglish;
+            options.MinTokenMultiplierOther ??= _config.Inference.MinTokenMultiplierOther;
+
+            // 同步 DebugMode 实例状态，以便 DebugLog 工作
+            this.DebugMode = options.DebugMode.Value;
+
+            return options;
+        }
+
+        private class GPT_KV_Cache : IDisposable
+        {
+            public DenseTensor<float> KCacheTensor { get; private set; }
+            public DenseTensor<float> VCacheTensor { get; private set; }
+
+            public GPT_KV_Cache(float[] kData, float[] vData, int[] shape)
+            {
+                KCacheTensor = new DenseTensor<float>(kData.ToArray(), shape);
+                VCacheTensor = new DenseTensor<float>(vData.ToArray(), shape);
+            }
+
+            public void Update(Tensor<float> newK, Tensor<float> newV)
+            {
+                KCacheTensor = newK.Clone() as DenseTensor<float> ?? throw new Exception("KV Cache clone failed");
+                VCacheTensor = newV.Clone() as DenseTensor<float> ?? throw new Exception("KV Cache clone failed");
+            }
+
+            public void Dispose() { }
+        }
+
         public void Dispose()
         {
+            if (IsShared) return;
+
             _sslSession?.Dispose();
             _bertSession?.Dispose();
             _vqEncoderSession?.Dispose();
@@ -873,8 +946,6 @@ namespace AstraTTS.Core.Core
             _gptStepSession?.Dispose();
             _sovitsSession?.Dispose();
             _svSession?.Dispose();
-
-            GC.SuppressFinalize(this);
         }
     }
 }

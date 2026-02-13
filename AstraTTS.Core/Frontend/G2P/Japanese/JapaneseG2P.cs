@@ -17,8 +17,10 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
     {
         private readonly OpenJTalkAPI _api;
         private readonly string _dictPath;
+        private readonly Dictionary<string, string[]> _customDict;
         private bool _initialized;
         private bool _disposed;
+        public bool DebugMode { get; set; } = false;
 
         // OpenJTalk 不是线程安全的，需要使用锁来同步所有 API 调用
         private static readonly object _lock = new object();
@@ -32,7 +34,7 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
         {
             { "sil", "SP" }, { "pau", "," }, { "cl", "cl" },
             { "a", "a" }, { "i", "i" }, { "u", "u" }, { "e", "e" }, { "o", "o" },
-            { "A", "a" }, { "I", "I" }, { "U", "U" }, { "E", "e" }, { "O", "o" },
+            { "A", "a" }, { "I", "i" }, { "U", "u" }, { "E", "e" }, { "O", "o" },
             { "N", "N" }, { "n", "n" }, { "m", "m" }, { "ny", "ny" }, { "my", "my" },
             { "k", "k" }, { "ky", "ky" }, { "g", "g" }, { "gy", "gy" },
             { "s", "s" }, { "sh", "sh" }, { "z", "z" }, { "j", "j" },
@@ -42,10 +44,11 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
             { "w", "w" }, { "y", "y" }, { "v", "v" },
         };
 
-        public JapaneseG2P(string dictPath, string? userDictPath = null)
+        public JapaneseG2P(string dictPath, string? customDictPath = null)
         {
             _api = new OpenJTalkAPI();
             _dictPath = dictPath;
+            _customDict = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
 
             if (!Directory.Exists(dictPath))
             {
@@ -55,7 +58,8 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
 
             lock (_lock)
             {
-                _initialized = _api.Initialize(dictPath, userDictPath ?? string.Empty);
+                // Note: userDictPath is for OpenJTalk's internal binary user dict, we use our own text-based dict
+                _initialized = _api.Initialize(dictPath, string.Empty);
             }
 
             if (_initialized)
@@ -66,20 +70,42 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
             {
                 Console.WriteLine($"[JapaneseG2P] Failed to initialize OpenJTalk");
             }
+
+            LoadCustomDictionary(customDictPath);
         }
 
-        public G2PResult Process(string text)
+        private void LoadCustomDictionary(string? path)
         {
-            if (string.IsNullOrEmpty(text))
+            if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+
+            try
             {
-                return new G2PResult
+                int count = 0;
+                foreach (var line in File.ReadAllLines(path))
                 {
-                    NormalizedText = "",
-                    Phones = new List<string> { "SP" },
-                    PhoneIds = Symbols.GetIds(new List<string> { "SP" }),
-                    Word2Ph = new[] { 1 }
-                };
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#")) continue;
+                    var parts = line.Split('\t');
+                    if (parts.Length >= 2)
+                    {
+                        string word = parts[0].Trim();
+                        string[] phones = parts[1].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        _customDict[word] = phones;
+                        count++;
+                    }
+                }
+                if (count > 0)
+                    Console.WriteLine($"[JapaneseG2P] Loaded {count} custom Japanese words from {path}");
             }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[JapaneseG2P] Error loading custom dictionary: {ex.Message}");
+            }
+        }
+
+        public G2PResult Process(string text, int? priorityMode = null)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return CreateFallbackResult("");
 
             var normalized = JapaneseTextNormalizer.Normalize(text);
 
@@ -89,7 +115,20 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
                 if (_cache.TryGetValue(normalized, out var cached)) return cached;
             }
 
-            // 2. 获取 HTS 标签
+            // 2. 检查自定义词典 (精确匹配)
+            if (_customDict.TryGetValue(normalized, out var customPhones))
+            {
+                var customResult = new G2PResult
+                {
+                    NormalizedText = normalized,
+                    Phones = customPhones.ToList(),
+                    PhoneIds = Symbols.GetIds(customPhones),
+                    Word2Ph = Enumerable.Repeat(1, customPhones.Length).ToArray()
+                };
+                return customResult;
+            }
+
+            // 3. 获取 HTS 标签
             List<string>? labelList = null;
             lock (_lock)
             {
@@ -98,7 +137,7 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
                     if (_api == null) throw new InvalidOperationException("OpenJTalkAPI is not initialized.");
                     var labels = _api.GetLabels(normalized);
                     if (labels != null) labelList = labels.ToList();
-                    else if (InferenceEngineV1.DebugMode) Console.WriteLine($"[JapaneseG2P] API returned NULL for input: '{normalized}'");
+                    else if (DebugMode) Console.WriteLine($"[JapaneseG2P] API returned NULL for input: '{normalized}'");
                 }
                 catch (Exception ex)
                 {
@@ -118,7 +157,7 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
                 {
                     string rawPhoneme = label.Substring(start + 1, end - start - 1);
                     if (PhonemeMapping.TryGetValue(rawPhoneme, out string? mapped)) phones.Add(mapped);
-                    else if (InferenceEngineV1.DebugMode) Console.WriteLine($"[JapaneseG2P] Warning: Unknown phoneme '{rawPhoneme}'");
+                    else if (DebugMode) Console.WriteLine($"[JapaneseG2P] Warning: Unknown phoneme '{rawPhoneme}'");
                 }
             }
 
@@ -143,7 +182,7 @@ namespace AstraTTS.Core.Frontend.G2P.Japanese
                 if (_cache.Count >= MaxCacheSize) _cache.Remove(_cache.Keys.First());
                 _cache[normalized] = result;
 
-                if (InferenceEngineV1.DebugMode)
+                if (DebugMode)
                 {
                     Console.WriteLine($"[JapaneseG2P] Processed: '{normalized}', Phones: {string.Join(" ", phones)}");
                 }

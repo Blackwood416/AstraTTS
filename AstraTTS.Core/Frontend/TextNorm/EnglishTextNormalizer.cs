@@ -96,7 +96,7 @@ namespace AstraTTS.Core.Frontend.TextNorm
             text = ExpandFractions(text); // 1/2
             text = ExpandDecimals(text); // 3.14
             text = ExpandAlphanumeric(text); // GPT4
-            text = ExpandAcronyms(text); // HTML
+            // text = ExpandAcronyms(text); // HTML - Deprecated, G2P handles this better
 
             // 4. 数字归一化 (兜底)
             text = NormalizeNumbers(text);
@@ -353,8 +353,7 @@ namespace AstraTTS.Core.Frontend.TextNorm
                 List<string> expanded = new List<string>();
                 foreach (Match part in parts)
                 {
-                    if (char.IsLetter(part.Value[0])) expanded.Add(string.Join(" ", part.Value.ToCharArray()));
-                    else foreach (char c in part.Value) expanded.Add(c == '0' ? "zero" : Ones[c - '0']);
+                    expanded.Add(part.Value);
                 }
                 return string.Join(" ", expanded);
             });

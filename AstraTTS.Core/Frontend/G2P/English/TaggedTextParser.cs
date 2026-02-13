@@ -14,12 +14,14 @@ namespace AstraTTS.Core.Frontend.G2P.English
     }
 
     /// <summary>
-    /// 解析带标签的文本，识别 [lang=zh]...[/lang] 及 {ni3}{hao3} 原生音素块。
+    /// 解析带标签的文本，识别 {zh 内容} 语言切换及 {ni3}{hao3} 原生音素块。
     /// </summary>
     public static class TaggedTextParser
     {
-        private static readonly Regex LangTagRegex = new Regex(@"\[lang=([a-zA-Z]+)\](.*?)\[/lang\]", RegexOptions.Compiled | RegexOptions.Singleline);
-        private static readonly Regex NativeTagRegex = new Regex(@"({[^{}]+})", RegexOptions.Compiled);
+        // 匹配 {lang 内容}，lang 为 2-3 位字母，内容可以包含空格，非贪婪匹配
+        private static readonly Regex UnifiedTagRegex = new Regex(@"{([a-zA-Z]{2,3})\s+(.*?)}", RegexOptions.Compiled | RegexOptions.Singleline);
+        // 匹配 {ni3} 原生音素，由 MixedLanguageG2P 最终分发
+        private static readonly Regex NativeTagRegex = new Regex(@"({[^{}\s]+})", RegexOptions.Compiled);
 
         public static List<TextSegment> Parse(string text)
         {
@@ -27,29 +29,38 @@ namespace AstraTTS.Core.Frontend.G2P.English
             if (string.IsNullOrEmpty(text)) return result;
 
             int lastIdx = 0;
-            var matches = LangTagRegex.Matches(text);
+            var matches = UnifiedTagRegex.Matches(text);
+
+
+
             foreach (Match match in matches)
             {
                 if (match.Index > lastIdx)
                 {
-                    ProcessNormalAndNative(text.Substring(lastIdx, match.Index - lastIdx), null, result);
+                    ProcessNative(text.Substring(lastIdx, match.Index - lastIdx), null, result);
                 }
 
                 string lang = match.Groups[1].Value;
                 string content = match.Groups[2].Value;
-                ProcessNormalAndNative(content, lang, result);
+
+
+
+                // 语言标签内部的内容也可能包含原生音素块，例如 {zh GPT {ni3}}
+                // 但为了简单，目前暂不支持嵌套，仅作为普通文本处理
+                result.Add(new TextSegment { Text = content, Language = lang, Type = TextSegmentType.Normal });
+
                 lastIdx = match.Index + match.Length;
             }
 
             if (lastIdx < text.Length)
             {
-                ProcessNormalAndNative(text.Substring(lastIdx), null, result);
+                ProcessNative(text.Substring(lastIdx), null, result);
             }
 
             return result;
         }
 
-        private static void ProcessNormalAndNative(string text, string? lang, List<TextSegment> result)
+        private static void ProcessNative(string text, string? lang, List<TextSegment> result)
         {
             if (string.IsNullOrEmpty(text)) return;
 

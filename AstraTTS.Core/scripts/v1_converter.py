@@ -30,27 +30,32 @@ def load_weights(path, name="Model"):
         raise ValueError(f"❌ {name} weight file is EMPTY (0 bytes): {path}. Please check your download.")
 
     try:
-        # Check for missing 'PK' header (common in some SoVITS formats)
-        with open(path, "rb") as f:
-            meta = f.read(2)
-            if meta != b"PK":
-                logger.warning(f"  Missing 'PK' header in {name}. Attempting to patch in-memory...")
-                data = b"PK" + f.read()
-                bio = BytesIO(data)
-                checkpoint = torch.load(bio, map_location='cpu', weights_only=False)
-            else:
-                # Try weights_only=True first (Safer for newer models)
-                try:
-                    checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-                except Exception:
-                    logger.warning(f"  Standard safe load failed for {name}, trying legacy load...")
-                    checkpoint = torch.load(path, map_location='cpu', weights_only=False)
-    except Exception as e2:
-        if "stack underflow" in str(e2).lower() or "pickle" in str(e2).lower():
-            logger.error(f"❌ CRITICAL ERROR: Failed to unpickle {name} weights.")
-            logger.error(f"   This usually means the file is CORRUPTED or missing a valid header.")
-            logger.error(f"   Note: We attempted to auto-fix missing 'PK' headers, but it still failed.")
-        raise e2
+        # Step 1: Try standard load first (safer and supports more formats)
+        try:
+            checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+        except Exception as e:
+            # Step 2: If standard load fails, check for mangled/missing headers
+            with open(path, "rb") as f:
+                header = f.read(2)
+                # Check for known mangled headers: "06" instead of "PK"
+                if header == b"06":
+                    logger.info(f"  Detected mangled ZIP header (06) in {name}. Patching to PK...")
+                    data = b"PK" + f.read() # Replace "06" with "PK"
+                    bio = BytesIO(data)
+                    checkpoint = torch.load(bio, map_location='cpu', weights_only=False)
+                elif header != b"PK" and header != b"\x80\x03": # Not ZIP, Not Legacy Pickle
+                    logger.info(f"  Unknown header {header.hex()} in {name}. Attempting 'PK' prepend as fallback...")
+                    f.seek(0)
+                    data = b"PK" + f.read()
+                    bio = BytesIO(data)
+                    checkpoint = torch.load(bio, map_location='cpu', weights_only=False)
+                else:
+                    raise e # It has a valid-looking header but still failed, something else is wrong
+    except Exception as e:
+        logger.error(f"❌ CRITICAL ERROR: Failed to load {name} weights: {e}")
+        if "stack underflow" in str(e).lower():
+            logger.error("   Note: This might be a legacy Pickle model that requires a specific environment to unpickle, or the ZIP header is corrupted.")
+        raise e
 
     # Handle different SoVITS save formats
     if isinstance(checkpoint, dict):
@@ -251,8 +256,68 @@ ENCODER_KEYS = [
 # CORE PIPELINE FUNCTIONS
 # ==============================================================================
 
-def patch_and_save_embedded(shell_path, weight_map, output_path, is_fp16=True):
-    logger.info(f"Embedding weights into {os.path.basename(shell_path)} -> {os.path.basename(output_path)}")
+def smart_map(onnx_path, source_weights, prefix_rules=None):
+    """
+    Dynamically maps ONNX initializers to source weights based on name matching and prefix rules.
+    Prioritizes shape matching to avoid destructive tiling/slicing.
+    """
+    if prefix_rules is None:
+        prefix_rules = {
+            "": ["", "model.", "vq_model.", "vq_model.enc_p.", "enc_p."],
+            "encoder.": ["model.", ""],
+            "vits.": ["", "vq_model.", "vq_model.enc_p.", "enc_p."],
+            "vq_model.": ["vq_model.enc_p.", "enc_p.", "", "model.", "vq_model."],
+            "transformer_encoder.": ["model.h.", "h.", "model."]
+        }
+        
+    model = onnx.load_model(onnx_path, load_external_data=False)
+    inits = {i.name: i for i in model.graph.initializer}
+    
+    mapping = {}
+    for target_key, proto in inits.items():
+        # Special cases handled outside smart_map: VQ logic
+        if "quantizer.vq" in target_key:
+            continue
+            
+        shell_size = 1
+        for d in proto.dims: shell_size *= d
+            
+        best_match = None
+        found_exact_shape = False
+        
+        # Priority 1: Direct match with exact shape
+        if target_key in source_weights:
+            if source_weights[target_key].numel() == shell_size:
+                mapping[target_key] = source_weights[target_key]
+                continue
+            else:
+                best_match = source_weights[target_key] # Candidate for tiling if nothing better found
+        
+        # Priority 2: Try prefix rules
+        for target_p, source_ps in prefix_rules.items():
+            if target_key.startswith(target_p):
+                suffix = target_key[len(target_p):]
+                for sp in source_ps:
+                    source_key = sp + suffix
+                    if source_key in source_weights:
+                        w = source_weights[source_key]
+                        if w.numel() == shell_size:
+                            mapping[target_key] = w
+                            found_exact_shape = True
+                            break
+                        elif best_match is None:
+                            best_match = w
+            if found_exact_shape: break
+            
+        if not found_exact_shape and best_match is not None:
+            mapping[target_key] = best_match
+            if best_match.numel() != shell_size:
+                logger.warning(f"  Adaptive patching for {target_key}: {'Slicing' if best_match.numel() > shell_size else 'Reshaping/Tiling'} {best_match.numel()} -> {shell_size}")
+            
+    return mapping
+
+def patch_and_save_embedded(shell_path, weight_map, out_path, is_fp16=False):
+    logger.info(f"Embedding weights into {os.path.basename(shell_path)} -> {os.path.basename(out_path)}")
     model = onnx.load_model(shell_path, load_external_data=False)
     initializer_map = {init.name: init for init in model.graph.initializer}
     
@@ -270,7 +335,15 @@ def patch_and_save_embedded(shell_path, weight_map, output_path, is_fp16=True):
             numpy_size = numpy_array.size
             
             if proto_size != numpy_size:
-                logger.error(f"❌ SHAPE MISMATCH for {key}: Shell expects size {proto_size}, got {numpy_size}")
+                # 特殊处理：如果形状不匹配但只是维度多出/减少了（常见于 Linear 与 Conv1d 转换）
+                if numpy_size < proto_size and proto_size % numpy_size == 0:
+                    logger.warning(f"  Adaptive patching for {key}: Reshaping/Tiling {numpy_size} -> {proto_size}")
+                    numpy_array = np.tile(numpy_array.flatten(), proto_size // numpy_size).reshape(list(tensor_proto.dims))
+                elif numpy_size > proto_size and numpy_size % proto_size == 0:
+                    logger.warning(f"  Adaptive patching for {key}: Slicing {numpy_size} -> {proto_size}")
+                    numpy_array = numpy_array.flatten()[:proto_size].reshape(list(tensor_proto.dims))
+                else:
+                    logger.error(f"❌ SHAPE MISMATCH for {key}: Shell expects size {proto_size} {list(tensor_proto.dims)}, got {numpy_size}")
             
             tensor_proto.raw_data = numpy_array.tobytes()
             del tensor_proto.external_data[:]
@@ -281,7 +354,7 @@ def patch_and_save_embedded(shell_path, weight_map, output_path, is_fp16=True):
     if unpatched_count > 0:
         logger.error(f"❌ {unpatched_count} tensors were NOT patched!")
             
-    onnx.save(model, output_path)
+    onnx.save(model, out_path)
     logger.info(f"  Embedded {count} tensors.")
 
 def simplify_model(input_path: str, output_path: str):
@@ -346,38 +419,42 @@ def run_conversion(args):
             "shell": "t2s_encoder_fp32.onnx",
             "is_fp16": False,
             "map": lambda: {
-                **{f"encoder.{k[6:]}": gpt_weights[k] for k in gpt_weights if k.startswith("model.ar_") or k.startswith("model.bert_")},
-                **{"vits.ssl_proj.weight": sovits_weights["ssl_proj.weight"], 
-                   "vits.ssl_proj.bias": sovits_weights["ssl_proj.bias"],
-                   "vits.quantizer.vq.layers.0._codebook.embed": sovits_weights["quantizer.vq.layers.0._codebook.embed"]}
+                # [FIX] V2ProPlus models have a buggy/blurry [768, 768, 2] ssl_proj.
+                # Force the use of the 192-dim projection and tile it, as this is proven to work (Aima path).
+                "vits.ssl_proj.weight": sovits_weights.get("enc_p.ssl_proj.weight", sovits_weights.get("ssl_proj.weight")),
+                "vits.ssl_proj.bias": sovits_weights.get("enc_p.ssl_proj.bias", sovits_weights.get("ssl_proj.bias")),
+                **smart_map(os.path.join(args.shells, "t2s_encoder_fp32.onnx"), {**sovits_weights, **gpt_weights}),
+                **{"vits.quantizer.vq.layers.0._codebook.embed": sum([v for k, v in sovits_weights.items() if "quantizer.vq.layers" in k and "embed" in k]) 
+                      if any("quantizer.vq.layers" in k for k in sovits_weights) else sovits_weights.get("quantizer.vq.layers.0._codebook.embed")}
             }
         },
         {
             "name": "t2s_first_stage_decoder",
             "shell": "t2s_first_stage_decoder_fp32.onnx",
-            "is_fp16": True,
-            "map": lambda: {k: gpt_weights[f"model.{k.replace('transformer_encoder', 'h')}"] 
-                           for k in get_t2s_keys() if f"model.{k.replace('transformer_encoder', 'h')}" in gpt_weights}
+            "is_fp16": False,
+            "map": lambda: smart_map(os.path.join(args.shells, "t2s_first_stage_decoder_fp32.onnx"), gpt_weights)
         },
         {
             "name": "t2s_stage_decoder",
             "shell": "t2s_stage_decoder_fp32.onnx",
-            "is_fp16": True,
-            "map": lambda: {k: gpt_weights[f"model.{k.replace('transformer_encoder', 'h')}"] 
-                           for k in get_t2s_keys() if f"model.{k.replace('transformer_encoder', 'h')}" in gpt_weights}
+            "is_fp16": False,
+            "map": lambda: smart_map(os.path.join(args.shells, "t2s_stage_decoder_fp32.onnx"), gpt_weights)
         },
         {
             "name": "vits",
             "shell": "vits_fp32.onnx",
             "is_fp16": True,
-            "map": lambda: {k: sovits_weights[k[9:] if k.startswith("vq_model.") else k] 
-                           for k in get_vits_keys() if (k[9:] if k.startswith("vq_model.") else k) in sovits_weights}
+            "map": lambda: {
+                **smart_map(os.path.join(args.shells, "vits_fp32.onnx"), sovits_weights),
+                **{"vq_model.quantizer.vq.layers.0._codebook.embed": sum([v for k, v in sovits_weights.items() if "quantizer.vq.layers" in k and "embed" in k])
+                   if any("quantizer.vq.layers" in k for k in sovits_weights) else sovits_weights.get("quantizer.vq.layers.0._codebook.embed")}
+            }
         },
         {
             "name": "prompt_encoder",
             "shell": "prompt_encoder_fp32.onnx",
             "is_fp16": True,
-            "map": lambda: {k: sovits_weights[k] for k in get_prompt_encoder_keys() if k in sovits_weights}
+            "map": lambda: smart_map(os.path.join(args.shells, "prompt_encoder_fp32.onnx"), {**sovits_weights, **gpt_weights})
         }
     ]
 

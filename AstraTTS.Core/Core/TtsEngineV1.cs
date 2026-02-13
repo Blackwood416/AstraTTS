@@ -6,6 +6,10 @@ using System.Threading.Tasks;
 using AstraTTS.Core.Config;
 using AstraTTS.Core.Frontend.BERT;
 using AstraTTS.Core.Frontend.G2P;
+using AstraTTS.Core.Frontend.G2P.Common;
+using AstraTTS.Core.Frontend.G2P.Chinese;
+using AstraTTS.Core.Frontend.G2P.English;
+using AstraTTS.Core.Frontend.G2P.Japanese;
 using AstraTTS.Core.Frontend.TextNorm;
 using AstraTTS.Core.Utils;
 using System.Buffers;
@@ -55,26 +59,30 @@ namespace AstraTTS.Core.Core
                     $"V1 TTS 模型目录不存在: '{config.V1TtsDir}'。" +
                     $"请确保 resources/models_v1/tts 目录存在，或将 UseEngineV2 设置为 true 以使用 V2 引擎。");
             }
-            InferenceEngineV1.DebugMode = true;
-
             // 异步并发加载资源
             await Task.Run(() =>
             {
+                var opt = _engine.GetSessionOptions(config);
                 Parallel.Invoke(
-                    () => _engine.LoadModels(config.V1TtsDir, config.HubertPath, config.SpeakerEncoderPath, config.UseDirectML),
+                    () => _engine.LoadModels(config.V1TtsDir, config, config.HubertPath, config.SpeakerEncoderPath),
                     () =>
                     {
                         if (File.Exists(config.BertModelPath) && File.Exists(config.TokenizerJsonPath))
-                            _bert = new RobertaFeatureExtractor(config.BertModelPath, config.TokenizerJsonPath);
+                            _bert = new RobertaFeatureExtractor(config.BertModelPath, config.TokenizerJsonPath, opt);
                     },
-                    () => _chineseG2p = new ChineseG2P(config.ChineseG2PDict, config.PinyinDict, config.CustomDictFullPath),
-                    () => _englishG2p = new EnglishG2P(config.CmuDict, config.NeuralG2PModel, config.CustomDictFullPath),
+                    () => _chineseG2p = new ChineseG2P(config.ChineseG2PDict, config.PinyinDict, config.CustomDictFullPath ?? "", config.PolyphonicJson, config.JiebaDictDir),
+                    () => _englishG2p = new EnglishG2P(config.CmuDict, config.NeuralG2PModel, config.CustomDictFullPath,
+                        config.EnglishPosTaggerDir, config.EnglishWordSegmentDir, config.EnglishSpecialDict, config.G2P.PriorityMode),
                     () =>
                     {
                         // 日语 G2P (可选 - 词典目录存在时加载)
                         if (Directory.Exists(config.JapaneseDictDir))
                         {
-                            _japaneseG2p = new JapaneseG2P(config.JapaneseDictDir);
+                            _japaneseG2p = new JapaneseG2P(config.JapaneseDictDir, config.CustomDictFullPath);
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[TtsEngineV1] Warning: Japanese dictionary not found at: {config.JapaneseDictDir}");
                         }
                     }
                 );
@@ -83,10 +91,29 @@ namespace AstraTTS.Core.Core
             if (_chineseG2p == null || _englishG2p == null)
                 throw new Exception("G2P 核心初始化失败");
 
-            _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p);
+            _englishG2p.DebugMode = config.DebugMode;
+            if (_japaneseG2p != null) _japaneseG2p.DebugMode = config.DebugMode;
+            if (_bert != null) _bert.DebugMode = config.DebugMode;
+
+            _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p, _config.G2P.Languages);
+            _mixedG2p.DebugMode = config.DebugMode;
 
             // 预处理参考音频 (可能包含模型推理，保持在 Task.Run 里或之后执行)
             await Task.Run(PrepareReference);
+        }
+
+        /// <summary>
+        /// 从另一个引擎实例共享核心资源（用于池化中的内存复用模式）
+        /// </summary>
+        public void ShareResourcesFrom(TtsEngineV1 other)
+        {
+            _engine.ShareModelsFrom(other._engine);
+            _bert = other._bert;
+            _chineseG2p = other._chineseG2p;
+            _englishG2p = other._englishG2p;
+            _japaneseG2p = other._japaneseG2p;
+            _mixedG2p = other._mixedG2p;
+            _config = other._config;
         }
 
 
@@ -119,17 +146,22 @@ namespace AstraTTS.Core.Core
                     return;
                 }
             }
-            else if (!string.IsNullOrEmpty(_config.RefAudioPath))
-            {
-                // 回退到旧版配置
-                refPath = _config.RefAudioPath;
-                refText = _config.RefText;
-                refLanguage = null;
-            }
             else
             {
                 Console.WriteLine("警告: 未配置参考音频，请在 Avatars 中添加配置。");
                 return;
+            }
+
+            // 自动补全语言标签
+            if (string.IsNullOrEmpty(refLanguage))
+            {
+                bool hasJaHints = refText.Any(c => (c >= 0x3040 && c <= 0x309F) || (c >= 0x30A0 && c <= 0x30FF) || c == 0x30FC || c == 0x300C || c == 0x300D || c == 0x30FB || c == 0x3005);
+                if (hasJaHints) refLanguage = "ja";
+                else
+                {
+                    var mode = LanguageDetector.DetectMode(refText);
+                    if (mode == LanguageDetector.LanguageMode.Japanese) refLanguage = "ja";
+                }
             }
 
             if (!File.Exists(refPath))
@@ -147,22 +179,54 @@ namespace AstraTTS.Core.Core
             _geAdvanced = geAdvanced;
 
             // 使用参考音频配置的语言进行 G2P 处理
-            var res = _mixedG2p!.Process(refText, refLanguage);
+            // 如果参考音频的语种不在全局允许列表中，创建临时 G2P 以纳入该语种
+            MixedLanguageG2P refG2p = _mixedG2p!;
+            if (!string.IsNullOrEmpty(refLanguage))
+            {
+                var refLangs = new List<string>(_config.G2P.Languages ?? new List<string> { "zh", "en" });
+                var lower = refLanguage.ToLowerInvariant();
+                if (!refLangs.Contains(lower) && (lower == "ja" || lower == "jp"))
+                {
+                    refLangs.Add("ja");
+                    refG2p = new MixedLanguageG2P(_chineseG2p!, _englishG2p!, _japaneseG2p, refLangs);
+                    refG2p.DebugMode = _config.DebugMode;
+                }
+                else if (!refLangs.Contains(lower) && lower == "en")
+                {
+                    refLangs.Add("en");
+                    refG2p = new MixedLanguageG2P(_chineseG2p!, _englishG2p!, _japaneseG2p, refLangs);
+                    refG2p.DebugMode = _config.DebugMode;
+                }
+            }
+            else
+            {
+                // 参考音频未设置语种 → 自动检测：如果文本包含假名，临时允许日语
+                bool hasKana = refText.Any(c => (c >= 0x3040 && c <= 0x309F) || (c >= 0x30A0 && c <= 0x30FF));
+                if (hasKana)
+                {
+                    refLanguage = "ja"; // 自动推断并赋值，用于后续 BERT 判断
+                    var refLangs = new List<string>(_config.G2P.Languages ?? new List<string> { "zh", "en" });
+                    if (!refLangs.Contains("ja")) refLangs.Add("ja");
+                    refG2p = new MixedLanguageG2P(_chineseG2p!, _englishG2p!, _japaneseG2p, refLangs);
+                    refG2p.DebugMode = _config.DebugMode;
+                }
+            }
+            var res = refG2p.Process(refText, refLanguage);
             _refPhoneIds = res.PhoneIds;
 
             if (_bert != null)
             {
-                // 检测语言模式 - 日语不使用 BERT（RoBERTa 是中文模型）
-                var mode = LanguageDetector.DetectMode(res.NormalizedText);
-                if (mode == LanguageDetector.LanguageMode.Chinese)
+                // 使用统一的 BERT 提取逻辑，确保参考音频与合成文本行为一致
+                float[] pooledBert = ExtractBertOptimal(res);
+                try
                 {
-                    string clean = res.NormalizedText.Replace("，", ",").Replace("。", ".");
-                    _refBert = _bert.Extract(clean, res.Word2Ph);
+                    // 将辅助 1D 数组转换为持久化的 2D 数组
+                    _refBert = new float[res.PhoneIds.Length, 1024];
+                    Buffer.BlockCopy(pooledBert, 0, _refBert, 0, res.PhoneIds.Length * 1024 * sizeof(float));
                 }
-                else
+                finally
                 {
-                    // 英语和日语使用零特征
-                    _refBert = new float[_refPhoneIds.Length, 1024];
+                    ArrayPool<float>.Shared.Return(pooledBert);
                 }
             }
             else
@@ -177,38 +241,58 @@ namespace AstraTTS.Core.Core
                 throw new InvalidOperationException("无法处理参考音频的文本 (G2P 失败)。请检查 RefText 配置。");
         }
 
-        public async Task<float[]> PredictAsync(string text, TtsOptions options)
+        public async Task<TtsResult> PredictAsync(string text, TtsOptions options)
         {
             // 检测音色切换
             EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
 
-            var (res, bertFeat) = ProcessFrontendOptimal(text);
-            try
+            // 1. 识别全文语言倾向，为分句处理提供全局上下文
+            var overallMode = LanguageDetector.DetectMode(text);
+            string? globalLangHint = (overallMode == LanguageDetector.LanguageMode.Japanese) ? "ja" : null;
+
+            // 2. 切分句子并逐句处理
+            string normalized = LanguageDetector.NormalizePunctuation(text);
+            var sentences = LanguageDetector.SplitSentences(normalized);
+            if (sentences.Count == 0) return new TtsResult { Audio = Array.Empty<float>() };
+
+            var allAudio = new List<float>();
+            int totalTokens = 0;
+
+            foreach (var s in sentences)
             {
-                return await Task.Run(() =>
+                // 3. 前端处理 (G2P + BERT) - 传入全局语言暗示
+                var (res, bertFeat) = ProcessFrontendOptimal(s, options, globalLangHint);
+                try
                 {
                     // 转换为 float[,] 以兼容旧引擎接口
                     var bert2D = new float[res.PhoneIds.Length, 1024];
                     Buffer.BlockCopy(bertFeat, 0, bert2D, 0, res.PhoneIds.Length * 1024 * sizeof(float));
 
-                    var predSemantic = _engine.RunT2S(res.PhoneIds, bert2D, _refPhoneIds, _refBert, _sslContent);
+                    var predSemantic = _engine.RunT2S(res.PhoneIds, bert2D, _refPhoneIds, _refBert, _sslContent, res.LanguageTags, options);
                     var audio = _engine.RunVocoder(res.PhoneIds, predSemantic, _refAudio32k, out int audioLen, _ge, _geAdvanced, options.Speed);
                     try
                     {
-                        float[] result = new float[audioLen];
-                        Array.Copy(audio, 0, result, 0, audioLen);
-                        return result;
+                        float[] audioData = new float[audioLen];
+                        Array.Copy(audio, 0, audioData, 0, audioLen);
+                        allAudio.AddRange(audioData);
+                        totalTokens += predSemantic.Length;
                     }
                     finally
                     {
                         _engine.ReturnAudioBuffer(audio);
                     }
-                });
+                }
+                finally
+                {
+                    ArrayPool<float>.Shared.Return(bertFeat);
+                }
             }
-            finally
+
+            return new TtsResult
             {
-                ArrayPool<float>.Shared.Return(bertFeat);
-            }
+                Audio = allAudio.ToArray(),
+                TokenCount = totalTokens
+            };
         }
 
         /// <summary>
@@ -232,6 +316,20 @@ namespace AstraTTS.Core.Core
             // 查找 Reference
             var reference = avatar.GetReference(referenceId);
             string effectiveRefId = reference?.Id ?? "default";
+            string refText = reference?.Text ?? "";
+            string? refLanguage = reference?.Language;
+
+            // 如果未显式指定语言，尝试根据文本特征判定（解决纯汉字日语参考文本识别为中文的问题）
+            if (string.IsNullOrEmpty(refLanguage))
+            {
+                bool hasJaHints = refText.Any(c => (c >= 0x3040 && c <= 0x309F) || (c >= 0x30A0 && c <= 0x30FF) || c == 0x30FC || c == 0x300C || c == 0x300D || c == 0x3005);
+                if (hasJaHints) refLanguage = "ja";
+                else
+                {
+                    var mode = LanguageDetector.DetectMode(refText);
+                    if (mode == LanguageDetector.LanguageMode.Japanese) refLanguage = "ja";
+                }
+            }
 
             // 检查是否需要重新加载
             if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId)
@@ -264,18 +362,20 @@ namespace AstraTTS.Core.Core
             EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
 
             string normalized = LanguageDetector.NormalizePunctuation(text);
-            normalized = EnglishTextNormalizer.Normalize(normalized);
 
             // 1. 句子切分
             var sentencesText = LanguageDetector.SplitSentences(normalized);
             var contexts = sentencesText.Select(s => new SentenceContext { Text = s }).ToList();
 
             // 2. 启动并行的前端预取 (BERT + G2P)
+            var overallMode = LanguageDetector.DetectMode(normalized);
+            string? globalLangHint = (overallMode == LanguageDetector.LanguageMode.Japanese) ? "ja" : null;
+
             foreach (var ctx in contexts)
             {
                 ctx.PreprocessTask = Task.Run(() =>
                 {
-                    var (res, bertFeat) = ProcessFrontendOptimal(ctx.Text);
+                    var (res, bertFeat) = ProcessFrontendOptimal(ctx.Text, options, globalLangHint);
                     ctx.G2p = res;
                     ctx.BertFeat = bertFeat;
                 }, cancellationToken);
@@ -324,14 +424,21 @@ namespace AstraTTS.Core.Core
                                             float[] fullAudio = _engine.RunVocoder(res.PhoneIds, tokens, _refAudio32k, out int currentTotalLen, _ge, _geAdvanced, options.Speed);
                                             try
                                             {
-                                                int newSamples = currentTotalLen - lastAudioLength;
-                                                if (newSamples > 0)
+                                                // 精确跳过逻辑：
+                                                // 如果当前生成的总长度 currentTotalLen 还没有超过之前已发送的水位线 lastAudioLength，
+                                                // 说明这是重试后正在生成的重复片段，直接跳过。
+                                                int newSamplesToPush = currentTotalLen - lastAudioLength;
+                                                if (newSamplesToPush > 0)
                                                 {
                                                     // 句子结束时追加静音尾部避免截断（200ms 容错缓冲）
                                                     int tailPadding = isFinal ? 6400 : 0;  // 200ms @ 32kHz
-                                                    float[] chunk = new float[newSamples + tailPadding];
-                                                    Array.Copy(fullAudio, lastAudioLength, chunk, 0, newSamples);
-                                                    // tailPadding 部分保持为 0（静音）
+                                                    float[] chunk = new float[newSamplesToPush + tailPadding];
+
+                                                    // 从 fullAudio 的末尾截取 newSamplesToPush 个点，
+                                                    // 相当于跳过了前面的音频，只取出水位线之后的新采样点。
+                                                    Array.Copy(fullAudio, currentTotalLen - newSamplesToPush, chunk, 0, newSamplesToPush);
+
+                                                    // 更新水位线
                                                     lastAudioLength = currentTotalLen;
                                                     await mainChannel.Writer.WriteAsync(chunk, cancellationToken);
                                                 }
@@ -369,12 +476,16 @@ namespace AstraTTS.Core.Core
                                         nextVocoderThreshold = Math.Max((int)(nextVocoderThreshold * 1.5), tokens.Length + options.StreamingChunkSize);
                                     }
                                 },
-                                onRetry: () =>
-                                {
-                                    while (tokenQueue.TryDequeue(out _)) { }
-                                    lastAudioLength = 0;
-                                    nextVocoderThreshold = options.StreamingChunkSize;
-                                });
+                                 onRetry: () =>
+                                 {
+                                     // 核心修复：重试时不重置 lastAudioLength 水位线。
+                                     // 之前发送给用户的音频已经不可撤回，新尝试产生的重复部分应在推送前被跳过。
+                                     while (tokenQueue.TryDequeue(out _)) { }
+                                     nextVocoderThreshold = options.StreamingChunkSize;
+                                     if (_config?.DebugMode == true) Console.WriteLine("[TtsEngineV1] T2S 重试触发，水位线维持。");
+                                 },
+                                languageTags: res.LanguageTags,
+                                options: options); // 透传选项
 
                             t2sComplete = true;
                             await innerVocoderTask;
@@ -402,21 +513,21 @@ namespace AstraTTS.Core.Core
             }
         }
 
-        private (G2PResult result, float[] bert) ProcessFrontendOptimal(string text)
+        private (G2PResult res, float[] bertFeat) ProcessFrontendOptimal(string text, TtsOptions options, string? explicitLanguage = null)
         {
+            // 仅进行标点符号归一化，有助于后续语种识别
             string normalized = LanguageDetector.NormalizePunctuation(text);
-            normalized = EnglishTextNormalizer.Normalize(normalized);
 
-            var mode = LanguageDetector.DetectMode(normalized);
-            G2PResult res;
-            if (mode == LanguageDetector.LanguageMode.Chinese)
-                res = _chineseG2p!.Process(normalized);
-            else if (mode == LanguageDetector.LanguageMode.English)
-                res = _englishG2p!.Process(normalized);
-            else if (mode == LanguageDetector.LanguageMode.Japanese)
-                res = _mixedG2p!.Process(normalized); // JapaneseG2P 通过 MixedLanguageG2P 路由
-            else
-                res = _mixedG2p!.Process(normalized);
+            // 统一使用 MixedLanguageG2P 处理，它会自动进行语种分割和路由
+            // 如果 Options 中指定了允许的语种列表，则为本次请求创建临时的 MixedLanguageG2P
+            MixedLanguageG2P g2p = _mixedG2p!;
+            if (options.Languages != null && options.Languages.Count > 0)
+            {
+                g2p = new MixedLanguageG2P(_chineseG2p!, _englishG2p!, _japaneseG2p, options.Languages);
+                g2p.DebugMode = _config?.DebugMode ?? false;
+            }
+
+            var res = g2p.Process(normalized, explicitLanguage, options.G2PPriorityMode);
 
             var bertFeat = ExtractBertOptimal(res);
             return (res, bertFeat);
@@ -424,43 +535,12 @@ namespace AstraTTS.Core.Core
 
         private float[] ExtractBertOptimal(G2PResult res)
         {
-            var mode = LanguageDetector.DetectMode(res.NormalizedText);
-
-            // 总是先分配并清理内存，防止垃圾数据
-            if (mode == LanguageDetector.LanguageMode.Chinese)
-                return ExtractChineseBertOptimal(res);
-            else if (mode == LanguageDetector.LanguageMode.Mixed)
-                return ExtractMixedBertOptimal(res);
-
-            // 其他语言（英语、日语）目前不使用 BERT，返回全零数组
-            float[] final = ArrayPool<float>.Shared.Rent(res.PhoneIds.Length * 1024);
-            Array.Clear(final, 0, final.Length);
-            return final;
+            // 统一调用混合语种 BERT 提取逻辑
+            // 该逻辑会根据 G2P 的分段信息 (PhoneLanguage) 决定哪些段落需要提取 BERT
+            // 这样能确保日语汉字不会被误判为中文进行 BERT 提取（只要 G2P 将其标为日语）
+            return ExtractMixedBertOptimal(res);
         }
 
-        private float[] ExtractChineseBertOptimal(G2PResult res)
-        {
-            float[] final = ArrayPool<float>.Shared.Rent(res.PhoneIds.Length * 1024);
-            Array.Clear(final, 0, final.Length);
-
-            if (_bert == null || res.Word2Ph.Length == 0) return final;
-
-            string text = res.NormalizedText;
-            int[] w2p = res.Word2Ph;
-
-            while (text.Length > 0 && ".。,，?？!！".Contains(text[^1]))
-            {
-                text = text[..^1];
-                if (w2p.Length > 0) w2p = w2p[..^1];
-            }
-
-            if (text.Length == 0 || w2p.Length == 0) return final;
-
-            var feat = _bert.Extract(text, w2p);
-            int rows = Math.Min(feat.GetLength(0), res.PhoneIds.Length);
-            Buffer.BlockCopy(feat, 0, final, 0, rows * 1024 * sizeof(float));
-            return final;
-        }
 
         private float[] ExtractMixedBertOptimal(G2PResult res)
         {
@@ -471,68 +551,57 @@ namespace AstraTTS.Core.Core
 
             foreach (var seg in res.Segments)
             {
-                if (seg.Language == PhoneLanguage.Chinese && !string.IsNullOrWhiteSpace(seg.Text) && seg.Word2Ph.Length > 0)
+                bool isSupported = seg.Language == PhoneLanguage.Chinese;
+                if (isSupported && !string.IsNullOrWhiteSpace(seg.Text) && seg.Word2Ph.Length > 0)
                 {
                     try
                     {
-                        var feat = _bert.Extract(seg.Text, seg.Word2Ph);
-                        int rows = Math.Min(feat.GetLength(0), seg.PhoneCount);
-                        rows = Math.Min(rows, res.PhoneIds.Length - seg.StartPhoneIndex);
-                        if (rows > 0)
+                        // 对齐修复: BERT 分词器忽略空格，但 ChineseG2P 为空格生成了 SP 音素 (word2ph=1)
+                        // 需要剔除空格对应的 word2ph 条目，并去除文本中的空格，以保证维度一致
+                        string bertText = seg.Text;
+                        int[] bertWord2Ph = seg.Word2Ph;
+
+                        // 逐字符匹配: word2ph 与归一化文本的字符一一对应
+                        // 空格字符对应的 word2ph 条目需要移除
+                        var cleanChars = new List<char>();
+                        var cleanW2P = new List<int>();
+                        int charIdx = 0;
+                        for (int w = 0; w < bertWord2Ph.Length && charIdx < bertText.Length; w++)
                         {
-                            int offset = seg.StartPhoneIndex * 1024 * sizeof(float);
-                            Buffer.BlockCopy(feat, 0, final, offset * sizeof(float), rows * 1024 * sizeof(float));
+                            char c = bertText[charIdx];
+                            if (char.IsWhiteSpace(c))
+                            {
+                                // 跳过空格及其 word2ph 条目
+                                charIdx++;
+                                continue;
+                            }
+                            cleanChars.Add(c);
+                            cleanW2P.Add(bertWord2Ph[w]);
+                            charIdx++;
+                        }
+
+                        bertText = new string(cleanChars.ToArray());
+                        bertWord2Ph = cleanW2P.ToArray();
+
+                        if (bertWord2Ph.Length > 0 && !string.IsNullOrEmpty(bertText))
+                        {
+                            var feat = _bert.Extract(bertText, bertWord2Ph);
+                            int rows = Math.Min(feat.GetLength(0), seg.PhoneCount);
+                            // 防御性检查
+                            rows = Math.Min(rows, res.PhoneIds.Length - seg.StartPhoneIndex);
+
+                            if (rows > 0)
+                            {
+                                int offset = seg.StartPhoneIndex * 1024;
+                                Buffer.BlockCopy(feat, 0, final, offset * sizeof(float), rows * 1024 * sizeof(float));
+                            }
                         }
                     }
-                    catch { }
-                }
-            }
-            return final;
-        }
-
-        private float[,] ExtractChineseBert(G2PResult res)
-        {
-            if (_bert == null || res.Word2Ph.Length == 0) return new float[res.PhoneIds.Length, 1024];
-
-            string text = res.NormalizedText;
-            int[] w2p = res.Word2Ph;
-
-            while (text.Length > 0 && ".。,，?？!！".Contains(text[^1]))
-            {
-                text = text[..^1];
-                if (w2p.Length > 0) w2p = w2p[..^1];
-            }
-
-            if (text.Length == 0 || w2p.Length == 0) return new float[res.PhoneIds.Length, 1024];
-
-            var feat = _bert.Extract(text, w2p);
-            var final = new float[res.PhoneIds.Length, 1024];
-            int rows = Math.Min(feat.GetLength(0), res.PhoneIds.Length);
-            Buffer.BlockCopy(feat, 0, final, 0, rows * 1024 * sizeof(float));
-            return final;
-        }
-
-        private float[,] ExtractMixedBert(G2PResult res)
-        {
-            var final = new float[res.PhoneIds.Length, 1024];
-            if (_bert == null || res.Segments == null) return final;
-
-            foreach (var seg in res.Segments)
-            {
-                if (seg.Language == PhoneLanguage.Chinese && !string.IsNullOrWhiteSpace(seg.Text) && seg.Word2Ph.Length > 0)
-                {
-                    try
+                    catch (Exception ex)
                     {
-                        var feat = _bert.Extract(seg.Text, seg.Word2Ph);
-                        int rows = Math.Min(feat.GetLength(0), seg.PhoneCount);
-                        rows = Math.Min(rows, res.PhoneIds.Length - seg.StartPhoneIndex);
-                        if (rows > 0)
-                        {
-                            int offset = seg.StartPhoneIndex * 1024 * sizeof(float);
-                            Buffer.BlockCopy(feat, 0, final, offset, rows * 1024 * sizeof(float));
-                        }
+                        if (_config?.DebugMode == true)
+                            Console.WriteLine($"[TtsEngineV1] Mixed BERT extraction failed for segment: {ex.Message}");
                     }
-                    catch { }
                 }
             }
             return final;

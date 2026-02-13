@@ -6,7 +6,12 @@ namespace AstraTTS.Core.Frontend.G2P.Common
 {
     public static class Symbols
     {
-        public static readonly string[] Punctuation = { "!", "?", "…", ",", "." };
+        public static readonly string[] Punctuation = {
+            "!", "?", "…", ",", ".",
+            "！", "？", "。", "，", "；", "：", "、",
+            "《", "》", "【", "】", "（", "）", "[", "]", "(", ")",
+            "—"
+        };
 
         private static readonly string[] _masterList = {
             "!",

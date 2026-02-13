@@ -79,7 +79,7 @@ namespace AstraTTS.Core.Frontend.G2P.Chinese
             }
         }
 
-        public G2PResult Process(string text)
+        public G2PResult Process(string text, int? priorityMode = null)
         {
             // --- 1. Native Mode Check ---
             // If text is wrapped in { }, treat as direct phonemes
