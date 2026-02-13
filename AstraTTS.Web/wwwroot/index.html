@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AstraTTS 控制中心</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <div class="logo-icon">A</div>
+                <span class="logo-text">Astra<span>TTS</span></span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#dashboard" class="nav-item active" data-tab="dashboard">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8h5z" fill="currentColor"/></svg>
+                    <span>仪表盘</span>
+                </a>
+                <a href="#avatars" class="nav-item" data-tab="avatars">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor"/></svg>
+                    <span>音色库管理</span>
+                </a>
+                <a href="#config" class="nav-item" data-tab="config">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.85,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.21l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.5c-1.93,0-3.5-1.57-3.5-3.5 s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S13.93,15.5,12,15.5z" fill="currentColor"/></svg>
+                    <span>控制中心</span>
+                </a>
+                <a href="#playground" class="nav-item" data-tab="playground">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="currentColor"/></svg>
+                    <span>合成实验室</span>
+                </a>
+                <a href="#converter" class="nav-item" data-tab="converter">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z" fill="currentColor"/></svg>
+                    <span>模型转换</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button id="theme-toggle" class="icon-btn">
+                    <svg class="sun-icon" viewBox="0 0 24 24" width="24" height="24"><path d="M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0 c-0.55,0-1,0.45-1,1S1.45,13,2,13L2,13z M20,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13L20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2L11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2 c0-0.55-0.45-1-1-1S11,19.45,11,20L11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06 c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58L5.99,4.58z M18.36,16.95c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L18.36,16.95L18.36,16.95z M5.99,19.42 l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41c0.39,0.39,1.03,0.39,1.41,0l1.06-1.06c0.39-0.39,0.39-1.03,0-1.41 S6.38,19.03,5.99,19.42L5.99,19.42z M18.36,7.05l1.06-1.06c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41S17.97,7.44,18.36,7.05L18.36,7.05z" fill="currentColor"/></svg>
+                    <svg class="moon-icon" viewBox="0 0 24 24" width="24" height="24" style="display:none;"><path d="M12.1,20.9c-4.9,0-8.9-4-8.9-8.9c0-4.9,4-8.9,8.9-8.9c0.4,0,0.8,0,1.2,0.1c0.4,0.1,0.6,0.5,0.5,0.9c-0.1,0.4-0.5,0.6-0.9,0.5 c-0.3,0-0.5,0-0.8,0c-3.9,0-7.1,3.2-7.1,7.1s3.2,7.1,7.1,7.1s7.1-3.2,7.1-7.1c0-0.3,0-0.5,0-0.8c-0.1-0.4,0.1-0.8,0.5-0.9 c0.4-0.1,0.8,0.1,0.9,0.5c0.1,0.4,0.1,0.8,0.1,1.2C21,16.9,17,20.9,12.1,20.9z" fill="currentColor"/></svg>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-body">
+            <!-- Header -->
+            <header class="top-bar">
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span id="runtime-status">正在连接引擎...</span>
+                </div>
+                <div class="user-actions">
+                    <button class="primary-btn" id="reload-btn">
+                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M17.65,6.35C16.2,4.9,14.21,4,12,4c-4.42,0-7.99,3.58-7.99,8s3.57,8,7.99,8c3.73,0,6.84-2.55,7.73-6h-2.08 c-0.82,2.33-3.04,4-5.65,4c-3.31,0-6-2.69-6-6s2.69-6,6-6c1.66,0,3.14,0.69,4.22,1.78L13,11h7V4L17.65,6.35z" fill="currentColor"/></svg>
+                        <span>热重载配置</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Dashboard Tab -->
+            <section id="dashboard-tab" class="tab-content active">
+                <div class="grid-layout">
+                    <div class="card stat-card">
+                        <h3>采样率</h3>
+                        <div class="stat-value" id="stat-sampling-rate">--</div>
+                        <div class="stat-unit">Hz</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>当前模式</h3>
+                        <div class="stat-value" id="stat-engine-type">--</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>注册音色</h3>
+                        <div class="stat-value" id="stat-avatar-count">--</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>V2 引擎</h3>
+                        <div class="stat-value" id="stat-v2-enabled">--</div>
+                    </div>
+                </div>
+                
+                <div class="card wide-card">
+                    <div class="card-header">
+                        <h2>模型路径概览</h2>
+                    </div>
+                    <div class="status-details">
+                        <div class="status-item">
+                            <label>默认音色 (DefaultAvatarId)</label>
+                            <span id="stat-default-id">--</span>
+                        </div>
+                        <div class="status-item">
+                            <label>资源存放目录</label>
+                            <span id="stat-resources-dir">--</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Avatars Tab -->
+            <section id="avatars-tab" class="tab-content">
+                <div class="avatars-layout">
+                    <div class="card avatar-manager">
+                        <div class="card-header">
+                            <h2>音色库管理</h2>
+                            <button class="primary-btn" id="add-avatar-btn">+ 新增音色</button>
+                        </div>
+                        <div class="avatar-table-container">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>名称</th>
+                                        <th>引擎</th>
+                                        <th>参考音频</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="avatar-list-body">
+                                    <!-- JS 渲染 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="avatar-editor" class="card editor-card" style="display:none;">
+                        <div class="card-header">
+                            <h2 id="editor-title">配置详情</h2>
+                            <div class="header-actions">
+                                <button class="secondary-btn" id="cancel-avatar-btn">取消</button>
+                                <button class="primary-btn" id="save-avatar-btn">确认保存</button>
+                            </div>
+                        </div>
+                        <form id="avatar-form">
+                            <input type="hidden" name="isNew" id="edit-avatar-is-new" value="false">
+                            <div class="config-grid">
+                                <div class="config-group">
+                                    <h3>基础元数据</h3>
+                                    <div class="field">
+                                        <label>音色 ID (唯一标识)</label>
+                                        <select name="Id" id="edit-avatar-id" class="styled-select" required>
+                                            <!-- JS 动态填充 -->
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label>名称 (Name)</label>
+                                        <input type="text" name="Name" required>
+                                    </div>
+                                    <div class="field">
+                                        <label>描述 (Description)</label>
+                                        <textarea name="Description" rows="2"></textarea>
+                                    </div>
+                                </div>
+                                <div class="config-group">
+                                    <h3>引擎绑定</h3>
+                                    <div class="field">
+                                        <label>引擎模式</label>
+                                        <select name="UseEngineV2">
+                                            <option value="null">跟随全局默认 (GLOBAL)</option>
+                                            <option value="true">强制 GPT-SoVITS (V2)</option>
+                                            <option value="false">强制 Genie-TTS (V1)</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label>默认参考音频</label>
+                                        <select name="DefaultReferenceId" class="styled-select">
+                                            <option value="default">default</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="reference-section">
+                                <div class="section-header">
+                                    <h3>参考音频映射 (References)</h3>
+                                    <div class="header-actions">
+                                        <button type="button" class="text-btn" id="import-audio-btn" style="color:var(--primary-color);">↑ 导入音频文件</button>
+                                        <button type="button" class="text-btn" id="add-reference-btn">+ 添加新参考</button>
+                                    </div>
+                                </div>
+                                <div id="reference-list-container" class="reference-list">
+                                    <!-- JS 渲染 -->
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Config Tab -->
+            <section id="config-tab" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <h2>全局参数管理</h2>
+                        <button class="primary-btn" id="save-config-btn">保存并应用</button>
+                    </div>
+                    <form id="config-form" class="config-grid">
+                        <div class="config-group">
+                            <h3>核心运行与并发</h3>
+                            <div class="field">
+                                <label>资源目录 (ResourcesDir)</label>
+                                <input type="text" name="ResourcesDir">
+                            </div>
+                            <div class="field">
+                                <label>默认音色 (DefaultAvatarId)</label>
+                                <select name="DefaultAvatarId" class="styled-select"></select>
+                            </div>
+                            <div class="field">
+                                <label>推理实例池容量 (PoolCapacity)</label>
+                                <input type="number" name="PoolCapacity" min="1" max="16">
+                            </div>
+                            <div class="field checkbox-field">
+                                <label><input type="checkbox" name="ReuseMemory"> 开启内存/Session 复用</label>
+                            </div>
+                            <div class="field checkbox-field">
+                                <label><input type="checkbox" name="DebugMode"> 开启详细调试日志 (DebugMode)</label>
+                            </div>
+                        </div>
+                        
+                        <div class="config-group">
+                            <h3>合成默认参数</h3>
+                            <div class="field checkbox-field">
+                                <label><input type="checkbox" name="UseEngineV2"> 全局优先使用 V2 引擎</label>
+                            </div>
+                            <div class="field">
+                                <label>默认语速 (Speed: <span id="cfg-speed-val">1.0</span>)</label>
+                                <input type="range" name="Speed" min="0.5" max="2.0" step="0.1">
+                            </div>
+                            <div class="field">
+                                <label>默认噪声系数 (NoiseScale)</label>
+                                <input type="number" name="NoiseScale" step="0.05">
+                            </div>
+                            <div class="field">
+                                <label>默认采样温度 (Temperature)</label>
+                                <input type="number" name="Temperature" step="0.1">
+                            </div>
+                            <div class="field">
+                                <label>默认 TopK 采样</label>
+                                <input type="number" name="TopK">
+                            </div>
+                            <div class="field-row">
+                                <div class="field">
+                                    <label>流式分块大小 (StreamingChunkSize)</label>
+                                    <input type="number" name="StreamingChunkSize" min="4" max="128">
+                                </div>
+                                <div class="field">
+                                    <label>流式预缓冲块数 (PreBufferChunks)</label>
+                                    <input type="number" name="StreamingPreBufferChunks" min="0" max="10">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="config-group">
+                            <h3>ONNX线程优化</h3>
+                            <div class="field">
+                                <label>内存优化级别 (0-2)</label>
+                                <select name="GraphOptimizationLevel">
+                                    <option value="0">0 - 禁用</option>
+                                    <option value="1">1 - 基础</option>
+                                    <option value="2">2 - 激进</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>内部线程数 (IntraOp)</label>
+                                <input type="number" name="IntraOpNumThreads">
+                            </div>
+                            <div class="field">
+                                <label>跨操作线程数 (InterOp)</label>
+                                <input type="number" name="InterOpNumThreads">
+                            </div>
+                        </div>
+
+                        <div class="config-group">
+                            <h3>推理重试阈值系数（越低越宽松）</h3>
+                            <div class="field">
+                                <label>最大生成重试次数</label>
+                                <input type="number" name="Inference.MaxRetries" min="0" max="5">
+                            </div>
+                            <div class="field-row">
+                                <div class="field">
+                                    <label>中文 (Zh) 阈值</label>
+                                    <input type="number" name="Inference.MinTokenMultiplierChinese" step="0.1">
+                                </div>
+                                <div class="field">
+                                    <label>英文 (En) 阈值</label>
+                                    <input type="number" name="Inference.MinTokenMultiplierEnglish" step="0.1">
+                                </div>
+                            </div>
+                            <div class="field-row">
+                                <div class="field">
+                                    <label>日文 (Ja) 阈值</label>
+                                    <input type="number" name="Inference.MinTokenMultiplierJapanese" step="0.1">
+                                </div>
+                                <div class="field">
+                                    <label>其它 (Other)</label>
+                                    <input type="number" name="Inference.MinTokenMultiplierOther" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="config-group">
+                            <h3>G2P & 语言列表</h3>
+                            <div class="field">
+                                <label>允许的语种 (双语限制)</label>
+                                <div class="checkbox-group inline-group" id="cfg-langs">
+                                    <label><input type="checkbox" value="zh" name="G2P.Languages"> 中</label>
+                                    <label><input type="checkbox" value="en" name="G2P.Languages"> 英</label>
+                                    <label><input type="checkbox" value="ja" name="G2P.Languages"> 日</label>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label>G2P 优先级模式</label>
+                                <select name="G2P.PriorityMode" class="styled-select">
+                                    <option value="0">0 - 词典优先 (DictFirst)</option>
+                                    <option value="1">1 - 仅词典 (DictOnly)</option>
+                                    <option value="2">2 - 模型优先 (ModelFirst)</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>自定义词典路径</label>
+                                <input type="text" name="G2P.CustomDictPath" placeholder="shared/custom_dict.txt">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Playground Tab -->
+            <section id="playground-tab" class="tab-content">
+                <div class="playground-layout">
+                    <div class="playground-controls card">
+                        <h3>推理选项</h3>
+                        <div class="field">
+                            <label>目标音色</label>
+                            <select id="pg-avatar-select" class="styled-select"></select>
+                        </div>
+                        <div class="field">
+                            <label>语速控制</label>
+                            <input type="range" id="pg-speed" min="0.5" max="2.0" step="0.1" value="1.0">
+                            <div class="range-value" id="pg-speed-val">1.0</div>
+                        </div>
+                        
+                        <div id="v2-params" style="display:none;">
+                            <div class="field">
+                                <label>采样温度 (Temperature)</label>
+                                <input type="number" id="pg-temp" step="0.1" value="1.0">
+                            </div>
+                            <div class="field">
+                                <label>噪声系数 (NoiseScale)</label>
+                                <input type="number" id="pg-noise" step="0.05" value="0.35">
+                            </div>
+                            <div class="field">
+                                <label>TopK 采样数</label>
+                                <input type="number" id="pg-topk" value="15">
+                            </div>
+                        </div>
+                        
+                        <div class="field">
+                            <label>参考音频</label>
+                            <select id="pg-ref-id" class="styled-select">
+                                <option value="">使用默认</option>
+                            </select>
+                        </div>
+                        
+                        <div class="field">
+                            <label>允许的语种 (双语限制)</label>
+                            <div class="checkbox-group inline-group" id="pg-langs">
+                                <label><input type="checkbox" value="zh" checked> 中</label>
+                                <label><input type="checkbox" value="en" checked> 英</label>
+                                <label><input type="checkbox" value="ja"> 日</label>
+                            </div>
+                        </div>
+
+                        <div class="field checkbox-field stream-option">
+                            <label><input type="checkbox" id="pg-stream-toggle"> 🔊 启用流式播放 (WIP)</label>
+                        </div>
+                    </div>
+                    <div class="playground-canvas card">
+                        <textarea id="pg-text" placeholder="在此输入文字，点击合成预览声音..."></textarea>
+                        <div class="audio-box">
+                            <button id="pg-play-btn" class="action-btn">
+                                <svg viewBox="0 0 24 24" width="24" height="24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+                                <span>立即合成播放</span>
+                            </button>
+                            <div id="playing-status" class="playing-indicator" style="display:none;">正在处理音频流...</div>
+                        </div>
+                        <div id="synth-perf-panel" class="perf-metrics-panel" style="display:none;">
+                            <div class="perf-item">
+                                <span class="perf-label" id="perf-fbl-label">生成耗时</span>
+                                <span class="perf-value"><span id="perf-fbl">--</span> <span id="perf-fbl-unit">ms</span></span>
+                            </div>
+                            <div class="perf-item">
+                                <span class="perf-label">生成速度</span>
+                                <span class="perf-value"><span id="perf-speed">--</span> <span id="perf-speed-unit">tokens/s</span></span>
+                            </div>
+                            <div class="perf-item">
+                                <span class="perf-label">实时率 (RTF)</span>
+                                <span class="perf-value" id="perf-rtf">--</span>
+                            </div>
+                        </div>
+                        <div id="pg-download-area" style="margin-top: 0.75rem;"></div>
+                        
+                        <!-- Stress Test UI -->
+                        <div class="stress-test-section">
+                            <div class="section-header" id="stress-test-toggle" style="cursor:pointer">
+                                <h3>🔥 并发压力测试</h3>
+                                <span class="toggle-icon">▼</span>
+                            </div>
+                            <div id="stress-test-panel" style="display:none; margin-top: 1rem;">
+                                <div class="stress-controls field-row">
+                                    <div class="field">
+                                        <label>并发数 (Threads)</label>
+                                        <input type="number" id="stress-concurrency" value="4" min="1" max="16">
+                                    </div>
+                                    <div class="field">
+                                        <label>重复次数</label>
+                                        <input type="number" id="stress-repeats" value="10" min="1">
+                                    </div>
+                                    <div class="field">
+                                        <label>音色模式</label>
+                                        <select id="stress-avatar-mode" class="styled-select">
+                                            <option value="current">当前选中音色</option>
+                                            <option value="all">全部音色轮询</option>
+                                        </select>
+                                    </div>
+                                    <div class="field">
+                                        <label>参考音频 ID</label>
+                                        <input type="text" id="stress-ref-id" placeholder="留空使用默认">
+                                    </div>
+                                </div>
+                                <div class="field" style="margin-top: 0.75rem;">
+                                    <label>测试文本 (每行一条，轮询使用；留空则使用上方输入框内容)</label>
+                                    <textarea id="stress-text" rows="3" placeholder="你好世界&#10;这是一段测试文本&#10;Hello World" style="font-size: 0.85rem;"></textarea>
+                                </div>
+                                <button class="primary-btn" id="run-stress-btn" style="margin-top: 0.75rem;">🚀 开始压测</button>
+                                <div id="stress-stats" class="perf-metrics-panel" style="margin: 1rem 0; padding: 0.75rem; font-size: 0.85rem; display:block;">
+                                    准备就绪。
+                                </div>
+                                <div class="stress-results-container">
+                                    <table class="data-table small-table">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>音色</th>
+                                                <th>状态</th>
+                                                <th>延迟</th>
+                                                <th>时长</th>
+                                                <th>下载</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="stress-results-body"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- Converter Tab -->
+            <section id="converter-tab" class="tab-content">
+                <div class="section-header">
+                    <h2>模型转换 (V1)</h2>
+                    <p>将 GPT-SoVITS 的 .ckpt 和 .pth 权重转换为 AstraTTS 所需的 ONNX 格式</p>
+                </div>
+                <div id="converter-env-status" class="card" style="margin-bottom:1rem;padding:0.75rem 1rem;font-size:0.9rem;"></div>
+                <div class="card converter-form">
+                    <div class="field">
+                        <label>GPT 权重文件 (.ckpt)</label>
+                        <div class="file-input-row">
+                            <input type="text" id="conv-ckpt" placeholder="点击右侧按钮选择文件..." readonly>
+                            <button type="button" class="text-btn" id="conv-ckpt-browse">浏览</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>SoVITS 权重文件 (.pth)</label>
+                        <div class="file-input-row">
+                            <input type="text" id="conv-pth" placeholder="点击右侧按钮选择文件..." readonly>
+                            <button type="button" class="text-btn" id="conv-pth-browse">浏览</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>目标音色 ID（输出目录名）</label>
+                        <input type="text" id="conv-avatar-id" placeholder="例如: astra">
+                    </div>
+                    <div class="field checkbox-group">
+                        <label><input type="checkbox" id="conv-simplify"> 启用 ONNX Simplify</label>
+                        <label><input type="checkbox" id="conv-quantize"> 启用 INT8 动态量化</label>
+                        <label><input type="checkbox" id="conv-clean" checked> 清理中间文件</label>
+                    </div>
+                    <div style="display:flex;gap:0.75rem;margin-top:1rem;align-items:center;">
+                        <button type="button" class="primary-btn" id="conv-start-btn">
+                            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+                            <span>开始转换</span>
+                        </button>
+                        <div id="converter-post-actions" style="display: none; gap: 0.75rem;">
+                            <button type="button" class="btn btn-secondary" onclick="openConverterOutput()">打开音色目录</button>
+                            <button type="button" class="btn btn-primary" onclick="importReferenceAudio()">导入参考音频</button>
+                        </div>
+                    </div>
+                    <div id="import-hint" style="display: none; font-size: 11px; color: #666; margin-top: 8px;">
+                        * 导入完成后请刷新页面，即可在音色库看到新参考音频
+                    </div>
+                </div>
+                <div class="card" style="margin-top:1rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                        <h3 style="margin:0;">转换日志</h3>
+                        <div id="converter-timer" style="font-family:monospace;font-size:0.9rem;color:var(--text-secondary);display:none;">
+                            用时: <span id="conv-time-val">00:00</span>
+                        </div>
+                    </div>
+                    <div id="converter-log" class="converter-log"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- File Picker Modal -->
+    <div id="file-picker-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content file-picker">
+            <div class="modal-header">
+                <h3 id="file-picker-title">选择文件</h3>
+                <button type="button" class="icon-btn" id="file-picker-close">&times;</button>
+            </div>
+            <div class="file-picker-nav">
+                <button type="button" class="text-btn" id="fp-up">↑ 上级</button>
+                <span id="fp-current-path" class="fp-path"></span>
+            </div>
+            <div id="fp-drives" class="fp-drives"></div>
+            <div id="fp-list" class="fp-list"></div>
+            <div class="modal-footer">
+                <span id="fp-selected" class="fp-selected"></span>
+                <button type="button" class="primary-btn" id="fp-confirm" disabled>确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display:none;">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loading-text">正在处理，请稍候...</div>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="toast" class="toast"></div>
+
+    <script src="js/core.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/avatars.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/playground.js"></script>
+    <script src="js/converter.js"></script>
+</body>
+</html>

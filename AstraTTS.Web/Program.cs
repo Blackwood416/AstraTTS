@@ -7,8 +7,7 @@ using Scalar.AspNetCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Parse config path from args
-string defaultConfig = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
-string configPath = File.Exists("config.json") ? Path.GetFullPath("config.json") : defaultConfig;
+string? configPath = null;
 for (int i = 0; i < args.Length; i++)
 {
     string arg = args[i];
@@ -44,8 +43,8 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-Console.WriteLine($"[AstraTTS.Web] Loading config from: {configPath}");
-var config = TTSConfig.LoadOrCreate(configPath);
+var config = configPath != null ? TTSConfig.LoadOrCreate(configPath) : TTSConfig.Load();
+Console.WriteLine($"[AstraTTS.Web] Loading config from: {TTSConfig.LoadedPath}");
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -78,6 +77,10 @@ builder.Services.AddOpenApi();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseMiddleware<AstraTTS.Web.Middleware.TtsExceptionMiddleware>();
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.MapOpenApi();
 app.MapScalarApiReference(); // Mapping Scalar at /scalar
 app.MapControllers();

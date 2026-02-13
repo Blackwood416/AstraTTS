@@ -43,8 +43,14 @@ namespace AstraTTS.Web.Models
         public int? StreamingChunkSize { get; set; }
 
         /// <summary>
-        /// 流式分块 Token 数。
+        /// G2P 优先级模式: 0-词典优先, 1-仅词典, 2-模型优先。
         /// </summary>
-        public int? StreamingChunkTokens { get; set; }
+        public int? G2PPriorityMode { get; set; }
+
+        /// <summary>
+        /// 允许的语言列表 (如 ["zh", "en"])。
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("languages")]
+        public List<string>? Languages { get; set; }
     }
 }

@@ -5,6 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>astra-server</AssemblyName>
+    <AssemblyVersion>1.1.1</AssemblyVersion>
+    <Version>1.1.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

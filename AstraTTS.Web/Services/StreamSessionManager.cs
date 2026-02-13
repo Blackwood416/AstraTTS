@@ -13,7 +13,8 @@ namespace AstraTTS.Web.Services
         public float Temperature { get; set; }
         public int TopK { get; set; }
         public int StreamingChunkSize { get; set; }
-        public int StreamingChunkTokens { get; set; }
+        public int? G2PPriorityMode { get; set; }
+        public List<string>? Languages { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsCompleted { get; set; }
         public CancellationTokenSource CancellationTokenSource { get; set; } = new();
@@ -22,11 +23,10 @@ namespace AstraTTS.Web.Services
     public class StreamSessionManager
     {
         private readonly ConcurrentDictionary<string, StreamSession> _sessions = new();
-        private readonly ConcurrentDictionary<string, IAsyncEnumerable<float[]>> _streamData = new();
 
         public string CreateSession(string text, string? avatarId, string? referenceId,
             float speed, float noiseScale, float temperature, int topK,
-            int streamingChunkSize, int streamingChunkTokens)
+            int streamingChunkSize, int? priorityMode, List<string>? languages)
         {
             var sessionId = Guid.NewGuid().ToString("N");
             var session = new StreamSession
@@ -40,7 +40,8 @@ namespace AstraTTS.Web.Services
                 Temperature = temperature,
                 TopK = topK,
                 StreamingChunkSize = streamingChunkSize,
-                StreamingChunkTokens = streamingChunkTokens,
+                G2PPriorityMode = priorityMode,
+                Languages = languages,
                 CreatedAt = DateTime.UtcNow,
                 IsCompleted = false
             };
@@ -53,17 +54,6 @@ namespace AstraTTS.Web.Services
         {
             _sessions.TryGetValue(sessionId, out var session);
             return session;
-        }
-
-        public void SetStreamData(string sessionId, IAsyncEnumerable<float[]> streamData)
-        {
-            _streamData.TryAdd(sessionId, streamData);
-        }
-
-        public IAsyncEnumerable<float[]>? GetStreamData(string sessionId)
-        {
-            _streamData.TryGetValue(sessionId, out var streamData);
-            return streamData;
         }
 
         public void CompleteSession(string sessionId)
@@ -88,7 +78,6 @@ namespace AstraTTS.Web.Services
             {
                 session.CancellationTokenSource.Dispose();
             }
-            _streamData.TryRemove(sessionId, out _);
         }
 
         public void CleanupOldSessions(TimeSpan maxAge)
