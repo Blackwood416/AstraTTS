@@ -139,6 +139,17 @@ Avatars:
 - **Windows**: 运行 `publish.ps1`。
 - **Linux**: 运行 `publish-linux.sh`。
 
+### Docker 部署 (推荐服务器使用)
+项目内置了 Dockerfile，支持快速容器化部署：
+```bash
+# 1. 构建镜像
+docker build -t astratts-server .
+
+# 2. 运行容器 (挂载宿主机的 resources 目录以持久化模型和配置)
+docker run -d -p 5000:5000 -v ./resources:/app/resources astratts-server
+```
+启动后即可访问 `http://localhost:5000`。
+
 ## 📄 许可证
 MIT License
 

@@ -142,6 +142,17 @@ Avatars:
 - **Windows**: Run `publish.ps1`.
 - **Linux**: Run `publish-linux.sh`.
 
+### Docker Deployment (Recommended for Servers)
+A Dockerfile is included for quick containerization:
+```bash
+# 1. Build the image
+docker build -t astratts-server .
+
+# 2. Run the container (mount the resources directory to persist models)
+docker run -d -p 5000:5000 -v ./resources:/app/resources astratts-server
+```
+Once started, access the WebUI at `http://localhost:5000`.
+
 ### Build & Run
 1.  Clone the repository: `git clone https://github.com/your-repo/AstraTTS.git`
 2.  Navigate to the project directory: `cd AstraTTS`
