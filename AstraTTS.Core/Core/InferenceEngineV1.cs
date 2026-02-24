@@ -63,12 +63,17 @@ namespace AstraTTS.Core.Core
             // 5. 减少 CPU 空转等待
             sessionOptions.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
 
-            // 6. DirectML 配置 (如果启用)
-            if (config.UseDirectML)
+            // 6. DirectML 配置 (如果启用且在 Windows 平台)
+            if (config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 // DirectML 不支持 MemoryPattern
                 sessionOptions.EnableMemoryPattern = false;
                 sessionOptions.AppendExecutionProvider_DML(0);
+                DebugLog("DirectML 加速已启用 (Windows)");
+            }
+            else if (config.UseDirectML)
+            {
+                DebugLog("DirectML 仅在 Windows 上可用，当前平台已忽略该配置。");
             }
 
             return sessionOptions;

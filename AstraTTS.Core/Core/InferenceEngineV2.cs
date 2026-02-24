@@ -86,7 +86,7 @@ namespace AstraTTS.Core.Core
             // 内存优化
             options.EnableCpuMemArena = true;
 
-            if (config.UseDirectML)
+            if (config.UseDirectML && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 options.EnableMemoryPattern = false;
                 options.AppendExecutionProvider_DML(0);
@@ -94,6 +94,8 @@ namespace AstraTTS.Core.Core
             }
             else
             {
+                if (config.UseDirectML)
+                    DebugLog("DirectML 仅在 Windows 上可用，当前环境将回退至 CPU");
                 options.EnableMemoryPattern = true;
             }
 

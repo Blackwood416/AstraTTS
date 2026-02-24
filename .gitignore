@@ -109,12 +109,14 @@ AstraTTS.Core/GenieData(Optional)/
 
 # Resource files
 resources/
+resources-minimal/
 
 # Tools files
 tools/
 
 # Publish results
 publish/
+publish-linux/
 venv/
 
 # Log files

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>🎙️ 高性能 Windows 专用 TTS (Text-to-Speech) 引擎</strong>
+  <strong>🎙️ 高性能跨平台 TTS (Text-to-Speech) 引擎</strong>
 </p>
 
 <p align="center">
@@ -43,14 +43,15 @@ AstraTTS 迎来重大更新，正式引入日语支持与全新的 Web 可视化
 - ⚖️ **高并发支持** - 内置推理池设计，支持多路并发合成，充分利用多核 CPU 资源。
 - 🎵 **流式输出** - 毫秒级首包延迟，支持边合成边播放，告别卡顿。
 - 🎭 **可视化管理** - 强大的 WebUI 面板，涵盖音色管理、模型转换与参数调节。
+- 🐧 **多平台支持** - 原生支持 Windows 10/11，并已实现 Linux (如 Ubuntu, Arch, WSL) 的完整兼容。
 - 🌐 **多语言支持** - 完善的中/英、中/日双语混读支持（三语混合尚在开发中）。
 - 🔄 **热重载** - 配置项可以在服务运行时即刻生效。
 
 ## 📦 项目结构
 
 - **AstraTTS.Core**: 核心 SDK，包含混合 G2P 引擎、RoBERTa/Hubert 特征提取器及高性能各版本推理引擎。
-- **AstraTTS.CLI**: Windows 专用命令行交互工具，支持低延迟 WASAPI 直接播放。
-- **AstraTTS.Web**: 后端 Web 服务，集成全套 WebUI 管理功能。
+- **AstraTTS.CLI**: 命令行交互工具。Windows 下支持低延迟 WASAPI 播放；Linux 下通过管道适配 `aplay`/`paplay`/`pw-play` 等音频后端。
+- **AstraTTS.Web**: 后端 Web 服务，集成全套 WebUI 管理功能，支持在 Linux 服务器 headless 部署。
 
 ---
 
@@ -129,7 +130,14 @@ Avatars:
 
 ### 运行环境
 - .NET 10.0 SDK。
-- **Windows 10/11** (目前强制依赖 Windows，不支持跨平台)。
+- **Windows**: 10/11 (x64/arm64)。
+- **Linux**: 支持基于 x86_64 或 ARM64 的主流发行版（如 Ubuntu 22.04+, Arch Linux, WSL2）。
+  - **Linux 依赖**: 需要安装 `dotnet-runtime-10.0`。
+  - **Linux 播音**: CLI 模式下推荐安装 `alsa-utils` (`aplay`) 或 `pulseaudio` (`paplay`)。
+
+### 构建与发布
+- **Windows**: 运行 `publish.ps1`。
+- **Linux**: 运行 `publish-linux.sh`。
 
 ## 📄 许可证
 MIT License

@@ -10,38 +10,51 @@ namespace AstraTTS.Core.Utils
     {
         public static float[] ReadWav(string path, int targetSampleRate)
         {
-            using var reader = new AudioFileReader(path);
-            int sourceChannels = reader.WaveFormat.Channels;
-            ISampleProvider provider = reader;
-
-            if (reader.WaveFormat.SampleRate != targetSampleRate)
+            WaveStream waveStream;
+            try
             {
-                provider = new WdlResamplingSampleProvider(provider, targetSampleRate);
+                // 优先使用 WaveFileReader，它是全托管实现，在 Linux 上读取标准 WAV 更稳定
+                waveStream = new WaveFileReader(path);
+            }
+            catch
+            {
+                // 如果是其他格式（如 MP3）或非标准 WAV，尝试使用 AudioFileReader (Windows 依赖较重)
+                waveStream = new AudioFileReader(path);
             }
 
-            // Read all samples (Max 60s for long references)
-            // Note: read_buffer will contain interleaved samples if source is multi-channel
-            var read_buffer = new float[targetSampleRate * sourceChannels * 60];
-            int read_count = provider.Read(read_buffer, 0, read_buffer.Length);
-
-            if (sourceChannels == 1)
+            using (waveStream)
             {
-                return read_buffer.Take(read_count).ToArray();
-            }
+                int sourceChannels = waveStream.WaveFormat.Channels;
+                ISampleProvider provider = waveStream.ToSampleProvider();
 
-            // Downmix to mono by averaging channels
-            int out_count = read_count / sourceChannels;
-            var mono_buffer = new float[out_count];
-            for (int i = 0; i < out_count; i++)
-            {
-                float sum = 0;
-                for (int c = 0; c < sourceChannels; c++)
+                if (waveStream.WaveFormat.SampleRate != targetSampleRate)
                 {
-                    sum += read_buffer[i * sourceChannels + c];
+                    provider = new WdlResamplingSampleProvider(provider, targetSampleRate);
                 }
-                mono_buffer[i] = sum / sourceChannels;
+
+                // Read all samples (Max 60s for long references)
+                var read_buffer = new float[targetSampleRate * sourceChannels * 60];
+                int read_count = provider.Read(read_buffer, 0, read_buffer.Length);
+
+                if (sourceChannels == 1)
+                {
+                    return read_buffer.Take(read_count).ToArray();
+                }
+
+                // Downmix to mono
+                int out_count = read_count / sourceChannels;
+                var mono_buffer = new float[out_count];
+                for (int i = 0; i < out_count; i++)
+                {
+                    float sum = 0;
+                    for (int c = 0; c < sourceChannels; c++)
+                    {
+                        sum += read_buffer[i * sourceChannels + c];
+                    }
+                    mono_buffer[i] = sum / sourceChannels;
+                }
+                return mono_buffer;
             }
-            return mono_buffer;
         }
 
         public static void SaveWav(string path, float[] samples, int sampleRate = 32000)

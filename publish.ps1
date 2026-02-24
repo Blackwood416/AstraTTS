@@ -1,4 +1,12 @@
-# AstraTTS 统一发布脚本
+﻿# AstraTTS 统一发布脚本
+# 设置控制台输出编码
+chcp 65001 >$null
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# 测试输出
+Write-Host "--- AstraTTS 编译发布工具 ---" -ForegroundColor Cyan
 
 $PublishDir = "publish"
 $Runtime = "win-x64" # 可以根据需要修改，例如 win-arm64
@@ -9,26 +17,34 @@ if (Test-Path $PublishDir) {
 }
 
 Write-Host "🚀 开始发布 AstraTTS.Web (astra-server)..." -ForegroundColor Green
-dotnet publish AstraTTS.Web/AstraTTS.Web.csproj -c Release -r $Runtime --self-contained true -o $PublishDir /p:PublishSingleFile=false
+dotnet publish AstraTTS.Web/AstraTTS.Web.csproj -c Release -r $Runtime --self-contained true -o $PublishDir /p:PublishSingleFile=false /p:AllowMissingPrunePackageData=true
 
 Write-Host "🚀 开始发布 AstraTTS.CLI (astra-cli)..." -ForegroundColor Green
-dotnet publish AstraTTS.CLI/AstraTTS.CLI.csproj -c Release -r $Runtime --self-contained true -o $PublishDir /p:PublishSingleFile=false
+dotnet publish AstraTTS.CLI/AstraTTS.CLI.csproj -c Release -r $Runtime --self-contained true -o $PublishDir /p:PublishSingleFile=false /p:AllowMissingPrunePackageData=true
+
+# 清理旧的 config.json (如果残留)
+if (Test-Path "$PublishDir/config.json") {
+    Remove-Item "$PublishDir/config.json" -Force
+}
 
 # 复制配置文件模板
-#if (Test-Path "config.template.json") {
-    #Write-Host "复制配置文件模板..." -ForegroundColor Yellow
-    #Copy-Item "config.template.json" -Destination "$PublishDir/config.template.json"
-#}
+if (Test-Path "config.template.yaml") {
+    Write-Host "📦 正在复制配置文件..." -ForegroundColor Yellow
+    Copy-Item "config.template.yaml" -Destination "$PublishDir/config.template.yaml"
+    Copy-Item "config.template.yaml" -Destination "$PublishDir/config.yaml"
+}
 
-# 复制模型转换工具
-#Write-Host "--- 集成模型转换工具 ---" -ForegroundColor Cyan
-#$toolsDir = "$PublishDir/tools/converter"
-#if (!(Test-Path "$toolsDir/templates")) {
-    #New-Item -ItemType Directory -Force -Path "$toolsDir/templates" | Out-Null
-#}
-#Copy-Item "AstraTTS.Core/scripts/v1_converter.py" -Destination "$toolsDir/v1_converter.py"
-#Copy-Item "AstraTTS.Core/scripts/init_env.ps1" -Destination "$toolsDir/init_env.ps1"
-#Copy-Item "AstraTTS.Core/scripts/templates/*.onnx" -Destination "$toolsDir/templates/"
+# 复制最小化资源目录
+if (Test-Path "resources-minimal") {
+    Write-Host "📦 正在复制资源文件 (minimal)..." -ForegroundColor Yellow
+    Copy-Item -Path "resources-minimal" -Destination "$PublishDir/resources" -Recurse -Force
+}
+
+# 复制工具目录
+if (Test-Path "tools") {
+    Write-Host "📦 正在复制工具目录..." -ForegroundColor Yellow
+    Copy-Item -Path "tools" -Destination "$PublishDir/tools" -Recurse -Force
+}
 
 Write-Host "`n✅ 发布完成！所有文件已整合至: $(Resolve-Path $PublishDir)" -ForegroundColor Green
 Write-Host "运行提示:"

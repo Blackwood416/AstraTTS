@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>🎙️ High-Performance Windows-Only TTS (Text-to-Speech) Engine</strong>
+  <strong>🎙️ High-Performance Cross-Platform TTS (Text-to-Speech) Engine</strong>
 </p>
 
 <p align="center">
@@ -44,15 +44,16 @@ AstraTTS has received a major update, introducing Japanese support and a compreh
 - ⚖️ **High Concurrency** - Built-in inference pool design allows simultaneous processing of multiple synthesis requests.
 - 🎵 **Streaming Synthesis** - Millisecond-level first-chunk latency with "play-while-synthesizing" support.
 - 🎭 **Visual Management** - Powerful WebUI dashboard for voice bank management, model conversion, and parameter tuning.
-- 🔧 **Flexible Deployment** - Ideal for both lightweight CLI use and distributed Web API services.
+- 🔧 **Flexible Deployment** - Ideal for both lightweight CLI use and distributed Web API services on Windows or Linux.
+- 🐧 **Linux Support** - Fully compatible with Linux distributions (Ubuntu, Arch, WSL) using high-performance C# core.
 - 🌐 **Mixed-Language Synthesis** - Robust support for ZH-EN and ZH-JA bilingual mixing (trilingual mix is still in development).
 - 🔄 **Hot Reload** - Configuration changes take effect immediately without service interruption.
 
 ## 📦 Project Structure
 
 - **AstraTTS.Core**: Core SDK containing hybrid G2P engines, RoBERTa/Hubert extractors, and high-performance inference modules.
-- **AstraTTS.CLI**: Windows-exclusive command-line tool with low-latency WASAPI playback.
-- **AstraTTS.Web**: Backend Web service providing RESTful APIs and the management dashboard.
+- **AstraTTS.CLI**: Command-line tool. Supports low-latency WASAPI on Windows; on Linux, it pipes audio to `aplay`, `paplay`, or `pw-play`.
+- **AstraTTS.Web**: Backend Web service with a comprehensive management dashboard, suitable for headless Linux server deployment.
 
 ---
 
@@ -132,7 +133,14 @@ Avatars:
 
 ### Prerequisites
 - .NET 10.0 SDK.
-- **Windows 10/11** (Windows is mandatory; other platforms are not supported).
+- **Windows**: Windows 10/11 (x64/arm64).
+- **Linux**: Major distributions (Ubuntu 22.04+, Arch Linux, WSL2).
+  - **Linux Dependencies**: `dotnet-runtime-10.0` is required.
+  - **Linux Audio**: Install `alsa-utils` (`aplay`) or `pulseaudio` (`paplay`) for CLI playback.
+
+### Build & Publish
+- **Windows**: Run `publish.ps1`.
+- **Linux**: Run `publish-linux.sh`.
 
 ### Build & Run
 1.  Clone the repository: `git clone https://github.com/your-repo/AstraTTS.git`

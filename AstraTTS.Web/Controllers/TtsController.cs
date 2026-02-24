@@ -643,12 +643,25 @@ namespace AstraTTS.Web.Controllers
 
             try
             {
-                Process.Start(new ProcessStartInfo
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
                 {
-                    FileName = "explorer.exe",
-                    Arguments = request.Path,
-                    UseShellExecute = true
-                });
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = request.Path,
+                        UseShellExecute = true
+                    });
+                }
+                else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "xdg-open",
+                        Arguments = request.Path,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
                 return Ok(new { success = true });
             }
             catch (Exception ex)

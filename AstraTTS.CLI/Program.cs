@@ -140,15 +140,18 @@ namespace AstraTTS.CLI
             if (!_streamingPlayback)
                 _streamingPlayback = config.StreamingMode;
 
-            // 尝试启用低延迟模式
-            try
+            // 尝试启用低延迟模式 (仅 Windows)
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
-                _latencyHelper = new WasapiLowLatencyHelper();
-                _latencyHelper.EnableLowLatency();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Wasapi] 启用低延迟辅助失败: {ex.Message}");
+                try
+                {
+                    _latencyHelper = new WasapiLowLatencyHelper();
+                    _latencyHelper.EnableLowLatency();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Wasapi] 启用低延迟辅助失败: {ex.Message}");
+                }
             }
 
             using var sdk = new AstraTtsSdk(config);
@@ -309,29 +312,34 @@ namespace AstraTTS.CLI
             };
 
             // Setup audio output
-            IWaveProvider audioSource;
-            MediaFoundationResampler? resampler = null;
+            bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+            IDisposable? waveOut = null;
+            LinuxAudioPlayer? linuxPlayer = null;
 
-            if (sdk.Config.WasapiExclusiveMode)
+            if (isWindows)
             {
-                var targetFormat = new WaveFormat(48000, 16, 2);
-                resampler = new MediaFoundationResampler(lockFreeProvider, targetFormat)
+                var wo = new WasapiOut(
+                    sdk.Config.WasapiExclusiveMode
+                        ? NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
+                        : NAudio.CoreAudioApi.AudioClientShareMode.Shared,
+                    50);
+
+                IWaveProvider audioSource = lockFreeProvider;
+                if (sdk.Config.WasapiExclusiveMode)
                 {
-                    ResamplerQuality = 1
-                };
-                audioSource = resampler;
+                    var targetFormat = new WaveFormat(48000, 16, 2);
+                    var resampler = new MediaFoundationResampler(lockFreeProvider, targetFormat) { ResamplerQuality = 1 };
+                    audioSource = resampler;
+                }
+                wo.Init(audioSource);
+                waveOut = wo;
             }
             else
             {
-                audioSource = lockFreeProvider;
+                linuxPlayer = new LinuxAudioPlayer();
+                linuxPlayer.Init(sdk.SamplingRate);
+                waveOut = linuxPlayer;
             }
-
-            using var waveOut = new WasapiOut(
-                sdk.Config.WasapiExclusiveMode
-                    ? NAudio.CoreAudioApi.AudioClientShareMode.Exclusive
-                    : NAudio.CoreAudioApi.AudioClientShareMode.Shared,
-                50);
-            waveOut.Init(audioSource);
 
             using var pipeline = new AudioPipeline(sdk.SamplingRate, 20, 20);
             var options = new TtsOptions { G2PPriorityMode = _priorityMode };
@@ -350,7 +358,14 @@ namespace AstraTTS.CLI
                 var (pcmBytes, pcmLen) = pipeline.ProcessChunk(chunk, samples, false);
                 try
                 {
-                    lockFreeProvider.AddSamples(pcmBytes, 0, pcmLen);
+                    if (isWindows)
+                    {
+                        lockFreeProvider.AddSamples(pcmBytes, 0, pcmLen);
+                    }
+                    else
+                    {
+                        linuxPlayer?.AddSamples(pcmBytes, 0, pcmLen);
+                    }
                 }
                 finally
                 {
@@ -359,23 +374,29 @@ namespace AstraTTS.CLI
 
                 if (!playbackStarted && chunkCount >= preBufferChunks)
                 {
-                    waveOut.Play();
+                    if (isWindows) (waveOut as WasapiOut)?.Play();
+                    else linuxPlayer?.Play();
                     playbackStarted = true;
                 }
 
-                double bufSecs = lockFreeProvider.BufferedBytes / (double)(sdk.SamplingRate * 2);
-                Console.Write($"\r🔊 Chunk {chunkCount}: +{samples / (double)sdk.SamplingRate:F2}s (buf: {bufSecs:F1}s)  ");
+                double bufSecs = isWindows ? lockFreeProvider.BufferedBytes / (double)(sdk.SamplingRate * 2) : 0;
+                string bufInfo = isWindows ? $"(buf: {bufSecs:F1}s)" : "";
+                Console.Write($"\r🔊 Chunk {chunkCount}: +{samples / (double)sdk.SamplingRate:F2}s {bufInfo}  ");
 
                 allAudio.AddRange(chunk);
             }
 
             // 处理最后一块的淡出
-            float[] silence = ArrayPool<float>.Shared.Rent(500); // 租用一块较大的静音块触发淡出
+            float[] silence = ArrayPool<float>.Shared.Rent(500);
             Array.Clear(silence, 0, 500);
             try
             {
                 var (pcmBytes, pcmLen) = pipeline.ProcessChunk(silence, 500, true);
-                try { lockFreeProvider.AddSamples(pcmBytes, 0, pcmLen); }
+                try
+                {
+                    if (isWindows) lockFreeProvider.AddSamples(pcmBytes, 0, pcmLen);
+                    else linuxPlayer?.AddSamples(pcmBytes, 0, pcmLen);
+                }
                 finally { ArrayPool<byte>.Shared.Return(pcmBytes); }
             }
             finally
@@ -386,27 +407,147 @@ namespace AstraTTS.CLI
 
             if (!playbackStarted)
             {
-                waveOut.Play();
+                if (isWindows) (waveOut as WasapiOut)?.Play();
+                else linuxPlayer?.Play();
             }
 
             // Wait for playback to finish
-            while (lockFreeProvider.BufferedBytes > 0)
+            if (isWindows)
             {
-                await Task.Delay(100);
+                while (lockFreeProvider.BufferedBytes > 0) await Task.Delay(100);
+            }
+            else
+            {
+                linuxPlayer?.WaitForFinish();
             }
             await Task.Delay(200);
 
-            waveOut.Stop();
+            if (isWindows) (waveOut as WasapiOut)?.Stop();
+            else linuxPlayer?.Stop();
+
+            waveOut?.Dispose();
             sw.Stop();
 
             Console.WriteLine();
             Console.WriteLine($"✅ Streaming complete | Chunks: {chunkCount} | Time: {sw.ElapsedMilliseconds}ms");
 
-            // 保存到文件 (流式模式也默认保存，除非用户显式关闭，目前这里保持与非流式一致的行为)
             string savePath = GetEffectiveOutputPath(_outputPath, _currentAvatarId ?? "default");
             EnsureDirectoryExists(savePath);
             AudioHelper.SaveWav(savePath, allAudio.ToArray(), sdk.SamplingRate);
             Console.WriteLine($"Saved to {savePath}");
+        }
+
+        /// <summary>
+        /// Linux 环境下的音频播放器，通过管道 (Pipe) 调用系统播放器
+        /// </summary>
+        class LinuxAudioPlayer : IDisposable
+        {
+            private Process? _process;
+            private Stream? _stdin;
+            private string _command = "aplay";
+            private bool _isStarted = false;
+
+            public void Init(int sampleRate)
+            {
+                // 探测播放器
+                if (CanRun("pw-play")) _command = "pw-play";
+                else if (CanRun("paplay")) _command = "paplay";
+                else if (CanRun("aplay")) _command = "aplay";
+                else if (CanRun("ffplay")) _command = "ffplay";
+
+                var args = _command switch
+                {
+                    "pw-play" => $"--format=s16 --rate={sampleRate} --channels=1 -",
+                    "paplay" => $"--format=s16le --rate={sampleRate} --channels=1 --raw",
+                    "aplay" => $"-f S16_LE -r {sampleRate} -c 1",
+                    "ffplay" => $"-f s16le -ar {sampleRate} -ac 1 -nodisp -autoexit -i pipe:0",
+                    _ => ""
+                };
+
+                try
+                {
+                    _process = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = _command,
+                            Arguments = args,
+                            RedirectStandardInput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        }
+                    };
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[LinuxAudio] 无法初始化播放进程 ({_command}): {ex.Message}");
+                }
+            }
+
+            private bool CanRun(string cmd)
+            {
+                try
+                {
+                    using var p = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "which",
+                        Arguments = cmd,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                    p?.WaitForExit();
+                    return p?.ExitCode == 0;
+                }
+                catch { return false; }
+            }
+
+            public void Play()
+            {
+                if (_isStarted) return;
+                try
+                {
+                    _process?.Start();
+                    _stdin = _process?.StandardInput.BaseStream;
+                    _isStarted = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[LinuxAudio] 启动播放失败: {ex.Message}");
+                }
+            }
+
+            public void AddSamples(byte[] buffer, int offset, int count)
+            {
+                try
+                {
+                    _stdin?.Write(buffer, offset, count);
+                    _stdin?.Flush();
+                }
+                catch { /* 进程可能已退出 */ }
+            }
+
+            public void WaitForFinish()
+            {
+                // 关闭 stdin 触发播放器结束
+                _stdin?.Close();
+                _process?.WaitForExit(2000);
+            }
+
+            public void Stop()
+            {
+                try
+                {
+                    if (_process != null && !_process.HasExited) _process.Kill();
+                }
+                catch { }
+            }
+
+            public void Dispose()
+            {
+                Stop();
+                _process?.Dispose();
+            }
         }
 
         static async Task HandleCommand(AstraTtsSdk sdk, string input)

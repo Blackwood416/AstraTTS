@@ -44,6 +44,10 @@ namespace AstraTTS.Core.Utils
 
         public void EnableLowLatency()
         {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return;
+            }
             if (_isStarted) return;
 
             try

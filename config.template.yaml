@@ -3,7 +3,7 @@
 # 请根据实际需要修改后保存为 config.yaml
 
 # 资源根目录：存放核心模型(models_v1)、语种词典(dicts)等资源
-ResourcesDir: ".\\resources"
+ResourcesDir: "./resources"
 
 # 默认使用的 Avatar ID
 DefaultAvatarId: chenxing
