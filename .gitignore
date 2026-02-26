@@ -111,13 +111,15 @@ AstraTTS.Core/GenieData(Optional)/
 resources/
 # resources-minimal/ (Now tracked via LFS)
 !resources-minimal/
-# Ignore subdirectories in resources-minimal if they are user-specific, but generally, we want the base
+!resources-minimal/**
+# Ignore subdirectories in resources-minimal if they are user-specific
 #resources-minimal/avatars/
 #resources-minimal/models_v1/
 
 # Tools files
 # tools/ (Now tracked via LFS)
 !tools/
+!tools/**
 tools/converter/runtime/
 
 # Publish results
