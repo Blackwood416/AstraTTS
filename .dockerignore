@@ -16,9 +16,8 @@
 **/publish
 **/publish-linux
 **/releases
-**/resources
-**/resources-*
 !resources-minimal/
+!tools/
 **/tools/converter/runtime
 **/venv
 .gemini/
@@ -27,6 +26,6 @@
 .vscode/
 
 # Ignore local models to avoid huge docker build context
-resources/models_v1/
-resources/models_v2/
-resources/avatars/
+# resources/models_v1/
+# resources/models_v2/
+# resources/avatars/
