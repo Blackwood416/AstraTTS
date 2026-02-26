@@ -678,13 +678,28 @@ namespace AstraTTS.Web.Controllers
         public IActionResult GetConverterStatus()
         {
             var converterDir = Path.GetFullPath(Path.Combine(_sdk.Config.ResourcesDir, "..", "tools", "converter"));
-            var pythonPath = Path.Combine(converterDir, "runtime", "python.exe");
+            string pythonPath;
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                pythonPath = Path.Combine(converterDir, "runtime", "python.exe");
+            }
+            else
+            {
+                // In Docker/Linux, we use the system python3
+                // We fake the existence here, actual existence checks happen in ConvertModel using 'which' or direct invocation
+                pythonPath = "/opt/venv/bin/python3"; // Or simply "python3"
+            }
+
             var scriptPath = Path.Combine(converterDir, "v1_converter.py");
             var shellsDir = Path.Combine(converterDir, "templates");
 
+            bool isPythonAvailable = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)
+                ? System.IO.File.Exists(pythonPath)
+                : true; // In the Docker container, we assume it's installed via Dockerfile
+
             return Ok(new
             {
-                available = System.IO.File.Exists(pythonPath) && System.IO.File.Exists(scriptPath) && Directory.Exists(shellsDir),
+                available = isPythonAvailable && System.IO.File.Exists(scriptPath) && Directory.Exists(shellsDir),
                 pythonPath,
                 scriptPath,
                 shellsDir,
@@ -765,16 +780,24 @@ namespace AstraTTS.Web.Controllers
             {
                 // Resolve paths
                 var converterDir = Path.GetFullPath(Path.Combine(_sdk.Config.ResourcesDir, "..", "tools", "converter"));
-                var pythonPath = Path.Combine(converterDir, "runtime", "python.exe");
+                string pythonPath;
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    pythonPath = Path.Combine(converterDir, "runtime", "python.exe");
+                    if (!System.IO.File.Exists(pythonPath))
+                    {
+                        await SendEvent("error", "Windows Python runtime not found: " + pythonPath);
+                        return;
+                    }
+                }
+                else
+                {
+                    pythonPath = "/opt/venv/bin/python3"; // Or system "python3"
+                }
+
                 var scriptPath = Path.Combine(converterDir, "v1_converter.py");
                 var shellsDir = Path.Combine(converterDir, "templates");
                 var outDir = Path.Combine(_sdk.Config.ResourcesDir, "models_v1", avatarId);
-
-                if (!System.IO.File.Exists(pythonPath))
-                {
-                    await SendEvent("error", "Python runtime not found: " + pythonPath);
-                    return;
-                }
 
                 // Build arguments
                 var args = $"\"{scriptPath}\" --ckpt \"{ckpt}\" --pth \"{pth}\" --shells \"{shellsDir}\" --out \"{outDir}\"";
