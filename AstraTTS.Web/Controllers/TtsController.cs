@@ -580,7 +580,16 @@ namespace AstraTTS.Web.Controllers
         {
             try
             {
-                var dir = string.IsNullOrWhiteSpace(path) ? Environment.GetFolderPath(Environment.SpecialFolder.Desktop) : path;
+                var dir = string.IsNullOrWhiteSpace(path)
+                    ? (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? Environment.GetFolderPath(Environment.SpecialFolder.Desktop) : "/")
+                    : path;
+
+                // If default desktop doesn't exist (e.g., some Windows Server or headless), fallback to C: or /
+                if (!Directory.Exists(dir))
+                {
+                    dir = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "C:\\" : "/";
+                }
+
                 if (!Directory.Exists(dir))
                     return BadRequest(new { error = "Directory does not exist", path = dir });
 
@@ -625,51 +634,7 @@ namespace AstraTTS.Web.Controllers
             }
         }
 
-        /// <summary>
-        /// 在 Windows 资源管理器中打开指定文件夹。
-        /// </summary>
-        [ApiExplorerSettings(IgnoreApi = true)]
-        [HttpPost("fs/open-folder")]
-        public IActionResult OpenFolder([FromBody] OpenFolderRequest request)
-        {
-            if (string.IsNullOrWhiteSpace(request.Path))
-                return BadRequest(new { error = "Path is required" });
-
-            if (!Directory.Exists(request.Path))
-            {
-                try { Directory.CreateDirectory(request.Path); }
-                catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
-            }
-
-            try
-            {
-                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = request.Path,
-                        UseShellExecute = true
-                    });
-                }
-                else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux))
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "xdg-open",
-                        Arguments = request.Path,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-                }
-                return Ok(new { success = true });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = ex.Message });
-            }
-        }
-
+        // OpenFolder API has been removed as it is unnecessary for headless/remote server usage
         /// <summary>
         /// 获取模型转换器状态
         /// </summary>
@@ -876,8 +841,4 @@ namespace AstraTTS.Web.Controllers
         }
     }
 
-    public class OpenFolderRequest
-    {
-        public string Path { get; set; } = "";
-    }
 }
