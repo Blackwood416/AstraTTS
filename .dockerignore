@@ -18,6 +18,7 @@
 **/releases
 **/resources
 **/resources-*
+!resources-minimal/
 **/tools/converter/runtime
 **/venv
 .gemini/

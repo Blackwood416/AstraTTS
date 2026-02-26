@@ -30,15 +30,16 @@ RUN mkdir -p /app/publish/tools/converter && \
     cp -r tools/converter/templates /app/publish/tools/converter/
 
 # ==========================================
-# 阶段 2: 最终运行环境 (包含 .NET 10, Python 3.11, 和 模型资源)
+# 阶段 2: 最终运行环境 (包含 .NET 10, Python 3.12, 和 模型资源)
 # ==========================================
-# bookworm 自带 Python 3.11
+# ubuntu noble 自带 Python 3.12, onnxsim 在 Linux 上支持python 3.12
 ARG REGISTRY=mcr.microsoft.com
 FROM ${REGISTRY}/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
-# 替换默认源为清华源以加速国内 apt 下载
-RUN sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/debian.sources || true
+# 替换默认源为清华源以加速国内 apt 下载 (针对 Ubuntu Noble)
+RUN sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/ubuntu.sources && \
+    sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list.d/ubuntu.sources || true
 
 # 安装 Python 3.11 和 wget, unzip (用于下载资源)
 RUN apt-get update && \
@@ -58,11 +59,25 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 # 安装转换器依赖 (使用清华 pip 源加速)
 RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple onnx torch numpy onnxsim onnxruntime
 
-# 下载并解压 resources-minimal 到 /app/resources
-RUN wget -q "https://r2.blackwood.cv/share/73b8b7e12b" -O resources-minimal.zip && \
-    unzip -q resources-minimal.zip && \
-    mv resources-minimal resources && \
-    rm resources-minimal.zip
+# 使用通配符尝试拷贝本地可能存在的 resources-minimal
+# 附带 config.template.yaml 作为兜底文件防止本地没有资源时 COPY 失败报错
+COPY ["config.template.yaml", "resources-minima[l]", "/app/local_res/"]
+
+# 检查本地资源，如果不存在则从 R2 云端下载
+RUN if [ -d "/app/local_res/models_v1" ]; then \
+        echo "📦 检测到本地包含 resources-minimal，直接使用本地资源..." && \
+        mkdir -p /app/resources && \
+        mv /app/local_res/models_v1 /app/resources/ && \
+        mv /app/local_res/avatars /app/resources/ 2>/dev/null || true; \
+        mv /app/local_res/shared /app/resources/ 2>/dev/null || true; \
+    else \
+        echo "☁️ 本地未包含有效资源，正在从 R2 下载..." && \
+        wget -q "https://r2.blackwood.cv/share/73b8b7e12b" -O resources-minimal.zip && \
+        unzip -q resources-minimal.zip && \
+        mv resources-minimal resources && \
+        rm resources-minimal.zip; \
+    fi && \
+    rm -rf /app/local_res
 
 # 从构建阶段拷贝编译好的程序
 COPY --from=build /app/publish .
