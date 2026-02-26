@@ -493,6 +493,7 @@ namespace AstraTTS.CLI
                         FileName = "which",
                         Arguments = cmd,
                         RedirectStandardOutput = true,
+                        RedirectStandardError = true, // Hide 'which: no pw-play in ...'
                         UseShellExecute = false,
                         CreateNoWindow = true
                     });
