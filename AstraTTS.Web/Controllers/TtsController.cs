@@ -410,7 +410,9 @@ namespace AstraTTS.Web.Controllers
                 var templatePath = Path.Combine(configDir ?? "", "config.template.yaml");
 
                 if (!System.IO.File.Exists(templatePath))
-                    return StatusCode(404, new { success = false, message = "config.template.yaml not found." });
+                {
+                    return StatusCode(404, new { success = false, message = $"config.template.yaml not found at {templatePath}." });
+                }
 
                 System.IO.File.Copy(templatePath, TTSConfig.LoadedPath, true);
                 await _sdk.ReloadConfigAsync();

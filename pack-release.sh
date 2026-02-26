@@ -2,7 +2,7 @@
 
 # AstraTTS 资源与发布整合打包脚本 (Linux)
 
-VERSION="v1.1.1"
+VERSION="v1.2.1"
 RELEASE_DIR="releases"
 
 # 创建目录

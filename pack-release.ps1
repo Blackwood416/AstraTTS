@@ -5,7 +5,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$Version = "v1.1.1"
+$Version = "v1.2.1"
 $ReleaseDir = "releases"
 
 if (!(Test-Path $ReleaseDir)) {
@@ -34,7 +34,7 @@ function Compress-WithProgress {
 
 Write-Host "📦 开始打包 AstraTTS $Version 发布文件..." -ForegroundColor Cyan
 
-# 1. 打包 Windows 整合包
+# 打包 Windows 整合包
 if (Test-Path "publish") {
     $winZip = "$ReleaseDir/AstraTTS-$Version-win64.zip"
     if (Test-Path $winZip) { Remove-Item $winZip -Force }
@@ -43,28 +43,6 @@ if (Test-Path "publish") {
     Write-Host "✅ Windows 整合包打包完成！" -ForegroundColor Green
 } else {
     Write-Host "`n⚠️ 未找到 publish 目录，跳过打包 Windows。" -ForegroundColor Yellow
-}
-
-# 2. 打包 Linux 整合包
-if (Test-Path "publish-linux") {
-    $linuxZip = "$ReleaseDir/AstraTTS-$Version-linux64.zip"
-    if (Test-Path $linuxZip) { Remove-Item $linuxZip -Force }
-    Write-Host "`n正在压缩 Linux 整合包 -> $linuxZip ..." -ForegroundColor Yellow
-    Compress-WithProgress -SourcePath "publish-linux\*" -DestinationPath $linuxZip
-    Write-Host "✅ Linux 整合包打包完成！" -ForegroundColor Green
-} else {
-    Write-Host "`n⚠️ 未找到 publish-linux 目录，跳过打包 Linux。" -ForegroundColor Yellow
-}
-
-# 3. 单独打包核心资源
-if (Test-Path "resources-minimal") {
-    $resZip = "$ReleaseDir/AstraTTS-resources-minimal-$Version.zip"
-    if (Test-Path $resZip) { Remove-Item $resZip -Force }
-    Write-Host "`n正在压缩独立资源包 (resources-minimal) -> $resZip ..." -ForegroundColor Yellow
-    Compress-WithProgress -SourcePath "resources-minimal" -DestinationPath $resZip
-    Write-Host "✅ 独立资源包打包完成！" -ForegroundColor Green
-} else {
-    Write-Host "`n⚠️ 未找到 resources-minimal 目录，跳过资源的单独打包。" -ForegroundColor Red
 }
 
 Write-Host "`n🎉 所有打包作业均已完成进入: $(Resolve-Path $ReleaseDir)" -ForegroundColor Cyan

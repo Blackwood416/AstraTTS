@@ -18,23 +18,16 @@
 
 ---
 
-## 📢 New Version v1.1.1 Beta Released!
+## 📢 New Version v1.2.1 Released!
 
-AstraTTS has received a major update, introducing Japanese support and a comprehensive Web-based management interface.
+AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upgrades, particularly for Linux and containerized environments.
 
 ### ✨ New Features & Improvements
-- 🇯🇵 **Japanese Support** - Integrated OpenJTalk-based Japanese G2P system, supporting dynamic mixed synthesis (Current version supports dual-language mixing e.g., ZH-JA/ZH-EN, triple-language mix is not yet supported).
-- 🖥️ **All-New WebUI** - Access it at `http://localhost:5000` after starting `astra-server.exe`:
-  - **Voice Management**: Visual editing and batch reference audio management (direct upload supported).
-  - **Config Editor**: Online modification of global parameters with hot-reload support.
-  - **Interactive Debugging**: Real-time synthesis tests and performance stress testing.
-  - **Model Converter**: Integrated conversion logic optimized for **GPT-SoVITS V2ProPlus** architectures.
-- ⚖️ **Concurrency Enhancement** - Introduced an **Inference Engine Pool** to handle multiple simultaneous requests efficiently using multi-core CPUs, configurable via `PoolCapacity`.
-- 🧠 **G2P System Refactored** - Completely rewritten Graphene-to-Phoneme engine for significantly faster processing and improved polyphone accuracy.
-- 📝 **YAML Configuration Support** - Standardized on YAML format (`config.yaml`).
-  - **Readability**: Full comment support provided in `config.template.yaml` for all parameters.
-- 📂 **Directory Structure Optimization** - Flattened the `models_v1` hierarchy, removing redundant subfolders for more efficient asset loading.
-- 🔍 **Streamlined API Docs** - Optimized the built-in Scalar API page, hiding internal endpoints for a cleaner developer experience.
+- 🐳 **Native Docker Support** - Includes a streamlined Dockerfile for deployment, built on `.NET 10 (Ubuntu Noble)` and a native Python environment. Extremely fast and easy zero-config startup setup.
+- 🗃️ **Git LFS Resource Hosting** - `resources-minimal` (core models, dictionaries) and `tools` (model converter scripts) are now fully version-controlled via Git LFS. Simply run `git lfs pull` to seamlessly acquire all required components without manual ZIP downloads.
+- 🔄 **WebUI Quick Reset** - The Web management dashboard now features a one-click reset option, making it convenient for users to initialize or restore global configurations.
+- 🐧 **Linux Audio Compatibility** - The audio playback component in the CLI for Linux environments now features intelligent silent fallback handling (`pw-play` -> `paplay` -> `aplay`), improving compatibility across different distributions.
+- 🚀 **Full v2ProPlus & Concurrency Support** - Continues to maintain and optimize parallel loading and concurrent synthesis processing for models based on the GPT-SoVITS V2ProPlus architecture.
 
 ---
 

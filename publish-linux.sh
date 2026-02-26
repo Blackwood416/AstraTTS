@@ -33,7 +33,9 @@ fi
 
 if [ -d "tools" ]; then
     echo "📦 正在复制工具目录..."
-    cp -r tools "$PublishDir/tools"
+    mkdir -p "$PublishDir/tools/converter"
+    cp -r tools/converter/v1_converter.py "$PublishDir/tools/converter/v1_converter.py"
+    cp -r tools/converter/templates "$PublishDir/tools/converter/templates"
     # 删除 Windows 专用的 Python 运行时 (为了在 Linux 环境下精简体积)
     if [ -d "$PublishDir/tools/converter/runtime" ]; then
         echo "🧹 正在清理 Windows Python 运行时..."
