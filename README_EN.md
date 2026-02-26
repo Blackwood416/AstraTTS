@@ -83,12 +83,22 @@ resources/
 
 ## 📦 Portable Package Usage
 
-1.  **Download and Extract** the integration package.
-2.  **Start Web Dashboard**: Run `astra-server.exe`.
-3.  **Access Interface**: Open `http://localhost:5000` in your browser.
-    - Use the "Converter" tab to import your SoVITS models.
-    - Use the "Avatars" tab to upload reference audios and tune parameters.
-4.  **CLI Testing**: Run `astra-cli.exe` for local low-latency playback.
+### For Windows Users (`-win64.zip`):
+1. **Download and Extract** the integration package.
+2. **Start Web Dashboard**: Run `astra-server.exe`.
+3. **Access Interface**: Open `http://localhost:5000` in your browser.
+   - Use the "Converter" tab to import your SoVITS models.
+   - Use the "Avatars" tab to upload reference audios and tune parameters.
+4. **CLI Testing**: Run `astra-cli.exe` for local low-latency playback.
+
+### For Linux Users (`-linux64.tar.gz`):
+1. **Download and Extract**: `tar -xzvf AstraTTS-v*-linux64.tar.gz`
+2. **Initialize Converter Environment**:
+   - The Linux package does not embed the heavy Python runtime. You need to manually initialize the dependencies for model conversion.
+   - Run `./init-env.sh` in the extracted root directory (this auto-creates a lightweight Python virtual environment under `tools/converter/.venv`).
+3. **Start the Engine**:
+   - Make it executable and run: `chmod +x astra-server && ./astra-server`.
+   - For local CLI testing, try: `./astra-cli --text "Testing"`.
 
 ---
 
@@ -136,23 +146,28 @@ Avatars:
 - **Linux**: Run `publish-linux.sh`.
 
 ### Docker Deployment (Recommended for Servers)
-A Dockerfile is included for quick containerization:
+The project includes a multi-stage optimized Dockerfile that seamlessly integrates with Models managed by Git LFS. Deployment is native-grade and takes only a few steps:
+
 ```bash
-# 1. Build the image
-docker build -t astratts-server .
+# 1. Clone the repository (If you are downloading the source code for the first time)
+git clone https://github.com/Blackwood416/AstraTTS.git
+cd AstraTTS
 
-# 2. Run the container (mount the resources directory to persist models)
-docker run -d -p 5000:5000 -v ./resources:/app/resources astratts-server
+# 2. Pull Git LFS Model Resources (CRITICAL step, otherwise the built image will lack the actual model binaries)
+git lfs pull
+
+# 3. Build the Docker image (Optimized and fast, dependencies are cached)
+docker build -t astratts-server:latest .
+
+# 4. Run the container
+# It is highly recommended to mount the local resources directory with -v so you can manage your models directly from the host machine.
+docker run -d --name astratts \
+  -p 5000:5000 \
+  -v ./resources:/app/resources \
+  astratts-server:latest
 ```
-Once started, access the WebUI at `http://localhost:5000`.
 
-### Build & Run
-1.  Clone the repository: `git clone https://github.com/your-repo/AstraTTS.git`
-2.  Navigate to the project directory: `cd AstraTTS`
-3.  Restore dependencies: `dotnet restore`
-4.  Build the solution: `dotnet build`
-5.  Run the web server: `dotnet run --project AstraTTS.Web`
-6.  Access the WebUI at `http://localhost:5000`.
+After the container starts, access `http://localhost:5000` in your browser to view the complete Web management dashboard. Config hot-reloading, voice bank management, AND model conversion UI are all fully supported while running inside the container.
 
 ---
 

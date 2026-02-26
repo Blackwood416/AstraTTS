@@ -682,9 +682,15 @@ namespace AstraTTS.Web.Controllers
             }
             else
             {
-                // In Docker/Linux, we use the system python3
-                // We fake the existence here, actual existence checks happen in ConvertModel using 'which' or direct invocation
-                pythonPath = "/opt/venv/bin/python3"; // Or simply "python3"
+                // Try to find the local venv (init-env.sh), then the Docker venv, then fallback to system python3
+                var localVenv = Path.Combine(converterDir, ".venv", "bin", "python3");
+                var dockerVenv = "/opt/venv/bin/python3";
+                if (System.IO.File.Exists(localVenv))
+                    pythonPath = localVenv;
+                else if (System.IO.File.Exists(dockerVenv))
+                    pythonPath = dockerVenv;
+                else
+                    pythonPath = "python3";
             }
 
             var scriptPath = Path.Combine(converterDir, "v1_converter.py");
@@ -692,7 +698,7 @@ namespace AstraTTS.Web.Controllers
 
             bool isPythonAvailable = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)
                 ? System.IO.File.Exists(pythonPath)
-                : true; // In the Docker container, we assume it's installed via Dockerfile
+                : (System.IO.File.Exists(pythonPath) || pythonPath == "python3"); // 如果是系统 python3，我们假设它存在，或者由调用方实际验证
 
             return Ok(new
             {
@@ -789,7 +795,15 @@ namespace AstraTTS.Web.Controllers
                 }
                 else
                 {
-                    pythonPath = "/opt/venv/bin/python3"; // Or system "python3"
+                    // Try to find the local venv (init-env.sh), then the Docker venv, then fallback to system python3
+                    var localVenv = Path.Combine(converterDir, ".venv", "bin", "python3");
+                    var dockerVenv = "/opt/venv/bin/python3";
+                    if (System.IO.File.Exists(localVenv))
+                        pythonPath = localVenv;
+                    else if (System.IO.File.Exists(dockerVenv))
+                        pythonPath = dockerVenv;
+                    else
+                        pythonPath = "python3";
                 }
 
                 var scriptPath = Path.Combine(converterDir, "v1_converter.py");
