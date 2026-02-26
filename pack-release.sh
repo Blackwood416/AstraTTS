@@ -20,10 +20,9 @@ if [ -d "publish-linux" ]; then
     cp init-env.sh publish-linux/
     chmod +x publish-linux/init-env.sh
     
-    # 切换到上级目录，将 publish-linux 作为根目录打包，并排除 windows runtime
+    # 切换到上级目录，将 publish-linux 作为根目录打包
     cd publish-linux || exit
-    # 如果未来手动把 resources 和 tools 放进去了，这里就会起作用排除 windows 的 python runtime
-    tar -czvf "../$LINUX_TAR" --exclude="tools/converter/runtime" ./* > /dev/null
+    tar -czvf "../$LINUX_TAR" ./* > /dev/null
     cd ..
     
     echo "✅ Linux 整合包 (.tar.gz) 打包完成！"
