@@ -6,6 +6,10 @@
 const Config = {
     init() {
         document.getElementById('save-config-btn').addEventListener('click', () => this.save());
+        const resetBtn = document.getElementById('reset-config-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.reset());
+        }
         
         // Language enforcement (max-2)
         const container = document.getElementById('cfg-langs');
@@ -149,6 +153,30 @@ const Config = {
             }
         } catch (e) {
             App.showToast('更新失败: ' + e.message, 'error');
+        } finally {
+            App.hideLoading();
+        }
+    },
+
+    async reset() {
+        if (!confirm('此操作将还原所有已配置项并清除音色库，是否确定？')) {
+            return;
+        }
+
+        App.showLoading('正在重置全局配置并重载引擎...');
+        try {
+            const resp = await fetch('/api/tts/config/reset', {
+                method: 'POST'
+            });
+            const result = await resp.json();
+            if (resp.ok && result.success) {
+                App.showToast('配置已重置为系统默认值');
+                await App.fetchAllWithRetry();
+            } else {
+                App.showToast('重置失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            App.showToast('重置失败: ' + e.message, 'error');
         } finally {
             App.hideLoading();
         }

@@ -394,6 +394,36 @@ namespace AstraTTS.Web.Controllers
             }
         }
 
+        /// <summary>
+        /// 重置设置为默认配置
+        /// </summary>
+        [ApiExplorerSettings(IgnoreApi = true)]
+        [HttpPost("config/reset")]
+        public async Task<IActionResult> ResetConfig()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(TTSConfig.LoadedPath))
+                    return StatusCode(500, new { success = false, message = "No config file loaded." });
+
+                var configDir = Path.GetDirectoryName(Path.GetFullPath(TTSConfig.LoadedPath));
+                var templatePath = Path.Combine(configDir ?? "", "config.template.yaml");
+
+                if (!System.IO.File.Exists(templatePath))
+                    return StatusCode(404, new { success = false, message = "config.template.yaml not found." });
+
+                System.IO.File.Copy(templatePath, TTSConfig.LoadedPath, true);
+                await _sdk.ReloadConfigAsync();
+
+                return Ok(new { success = true, message = "Configuration reset to default successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+
         // ============================================================
         // Avatar 管理接口
         // ============================================================
