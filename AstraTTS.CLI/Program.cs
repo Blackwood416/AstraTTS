@@ -641,6 +641,35 @@ namespace AstraTTS.CLI
                     }
                     await Task.CompletedTask;
                 }),
+                ("/reset", "- Reset global configuration to template defaults", async () => {
+                    Console.WriteLine("⚠️ 这将覆盖当前所有的自定义设置，确定重置为默认设置吗? (Y/N)");
+                    var confirm = Console.ReadLine();
+                    if (confirm?.Trim().ToUpper() == "Y")
+                    {
+                        try
+                        {
+                            string templatePath = "config.template.yaml";
+                            if (!File.Exists(templatePath))
+                            {
+                                Console.WriteLine($"[Error] Template file not found: {templatePath}");
+                            }
+                            else
+                            {
+                                File.Copy(templatePath, "config.yaml", true);
+                                await sdk.ReloadConfigAsync();
+                                Console.WriteLine("[Config] 系统已重置为默认设置，并热重载完毕！");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Error] 重置失败: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("已取消重置。");
+                    }
+                }),
                 ("/priority", "<mode> - Set G2P priority (0=DictFirst, 1=DictOnly, 2=ModelFirst)", async () => {
                     if (string.IsNullOrEmpty(arg)) {
                         Console.WriteLine($"Current G2P Priority: {(_priorityMode?.ToString() ?? "Default (0)")}");
@@ -744,6 +773,7 @@ namespace AstraTTS.CLI
             Console.WriteLine("  /priority <0|1|2> Change G2P priority mode");
             Console.WriteLine("  /langs <l1[,l2]>   Change allowed languages (comma separated, e.g. zh,en)");
             Console.WriteLine("  /reload          Reload configuration and models");
+            Console.WriteLine("  /reset           Reset configuration to defaults (from template)");
             Console.WriteLine("  /help            Show this command list");
             Console.WriteLine("  /exit            Quit AstraTTS CLI");
             Console.WriteLine();

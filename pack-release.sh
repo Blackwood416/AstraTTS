@@ -12,16 +12,21 @@ echo "📦 开始打包 AstraTTS $VERSION 发布文件..."
 
 # 1. 打包 Linux 整合包
 if [ -d "publish-linux" ]; then
-    LINUX_ZIP="$RELEASE_DIR/AstraTTS-$VERSION-linux64.zip"
-    rm -f "$LINUX_ZIP"
-    echo -e "\n正在压缩 Linux 整合包 -> $LINUX_ZIP ..."
+    LINUX_TAR="$RELEASE_DIR/AstraTTS-$VERSION-linux64.tar.gz"
+    rm -f "$LINUX_TAR"
+    echo -e "\n正在压缩 Linux 整合包 -> $LINUX_TAR ..."
     
-    # 切换到目录内压缩避免带上顶级目录名
+    # 拷贝初始化脚本到发布目录
+    cp init-env.sh publish-linux/
+    chmod +x publish-linux/init-env.sh
+    
+    # 切换到上级目录，将 publish-linux 作为根目录打包，并排除 windows runtime
     cd publish-linux || exit
-    zip -r "../$LINUX_ZIP" ./* > /dev/null
+    # 如果未来手动把 resources 和 tools 放进去了，这里就会起作用排除 windows 的 python runtime
+    tar -czvf "../$LINUX_TAR" --exclude="tools/converter/runtime" ./* > /dev/null
     cd ..
     
-    echo "✅ Linux 整合包打包完成！"
+    echo "✅ Linux 整合包 (.tar.gz) 打包完成！"
 else
     echo -e "\n⚠️ 未找到 publish-linux 目录，跳过打包 Linux。提示: 请先运行 ./publish-linux.sh"
 fi
