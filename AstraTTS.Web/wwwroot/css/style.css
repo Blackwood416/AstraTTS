@@ -61,19 +61,16 @@ body {
     margin-bottom: 2.5rem;
 }
 
-.logo-icon {
+.logo-img {
     width: 40px;
     height: 40px;
-    background: linear-gradient(135deg, var(--accent-color), #a855f7);
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: bold;
-    font-family: 'Outfit', sans-serif;
-    font-size: 1.5rem;
-    box-shadow: 0 4px 12px var(--accent-glow);
+    object-fit: contain;
+    /* 浅色主题下将白色转为黑色 */
+    filter: invert(1) hue-rotate(180deg);
+}
+
+.dark-theme .logo-img {
+    filter: none;
 }
 
 .logo-text {
