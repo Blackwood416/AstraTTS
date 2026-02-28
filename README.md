@@ -16,6 +16,10 @@
   <a href="./README_EN.md">English</a> | 简体中文
 </p>
 
+<p align="center">
+  <a href="https://jq.qq.com/?_wv=1027&k=yvN60wYc"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-1083409411-blue?style=flat-square&logo=qq"></a>
+</p>
+
 ---
 
 ## 📢 新版本 v1.2.1 发布！
@@ -41,6 +45,62 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 - 🌐 **多语言支持** - 完善的中/英、中/日双语混读支持（三语混合尚在开发中）。
 - 🔄 **热重载** - 配置项可以在服务运行时即刻生效。
 
+---
+
+## 📦 安装与部署指南
+
+### 1. 整合包极速体验 (Windows / Linux)
+推荐国内用户通过 **夸克网盘** 下载完整的环境整合包（内含所有运行环境与默认模型）。
+- **获取链接**: [https://pan.quark.cn/s/f971fa67e940](https://pan.quark.cn/s/f971fa67e940)
+- **提取码**: `QXYk`
+
+#### 对于 Windows 用户 (`-win64.zip`)：
+1. **下载并解压** 整合包。
+2. **启动 Web 控制面板**: 运行 `astra-server.exe`。
+3. **访问界面**: 浏览器打开 `http://localhost:5000`。
+   - 在“模型转换”页可导入 SoVITS 模型。
+   - 在“音色库管理”页可上传参考音频并调整参数。
+4. **命令行单次播音**: 运行 `astra-cli.exe` 进行本地低延迟朗读。
+
+#### 对于 Linux 用户 (`-linux64.tar.gz`)：
+1. **下载并直接解压**: `tar -xzvf AstraTTS-v*-linux64.tar.gz`
+2. **初始化模型转换环境**: 
+   - Linux 环境由于未内嵌数百 MB 的 Python 构建环境，需要手动初始化依赖。
+   - 在解压后的根目录运行：`./init-env.sh` (此脚本将在 `tools/converter/.venv` 下自动搭建所需的轻量级虚拟环境)。
+3. **启动引擎**:
+   - `chmod +x astra-server && ./astra-server` 即可启动 Web 服务。
+   - 本地体验可以同样执行 `./astra-cli --text "测试"`。
+
+### 2. Docker 部署 (推荐服务器使用)
+项目内置了由多阶段构建优化的 Dockerfile。你可以通过拉取 Git LFS 或者直接下载模型独立包 (`resources-minimal`) 来部署：
+
+- **无需 Git LFS 的下载方式**: 如果你不方便使用 `git lfs` 获取 1GB 的模型，可以前往上方夸克网盘链接下载 `resources-minimal.zip` ，并解压覆盖到源码根目录下的 `resources-minimal` 文件夹中。
+
+```bash
+# 1. 克隆代码仓库
+git clone https://github.com/Blackwood416/AstraTTS.git
+cd AstraTTS
+
+# 2. 准备模型资源 (二选一)
+# 方式 A: 拉取 Git LFS 模型资源 (推荐)
+git lfs pull
+# 方式 B: 将下载好的 resources-minimal.zip 解压覆盖当前目录的 resources-minimal 文件夹
+
+# 3. 极速构建 Docker 镜像 (已针对国内网络加速，依赖的 apt 与 pip 已默认使用清华源，docker 镜像文件使用渡渡鸟镜像同步站 https://docker.aityp.com/ 提供的加速节点，如果发现节点无法访问可以自行修改 Dockerfile 中的镜像源)
+docker build -t astratts-server:latest .
+
+# 4. 运行容器
+# 建议通过 -v 参数将本地的 resources 目录挂载进容器内部，以便于你随时在宿主机管理和更新模型文件。
+docker run -d --name astratts \
+  -p 5000:5000 \
+  -v ./resources:/app/resources \
+  astratts-server:latest
+```
+
+容器启动后，在浏览器访问 `http://localhost:5000` 即可见到完整的 Web 控制面板。所有的配置热重载、音色库管理以及模型转换功能均可完美在容器中工作。
+
+---
+
 ## 📦 项目结构
 
 - **AstraTTS.Core**: 核心 SDK，包含混合 G2P 引擎、RoBERTa/Hubert 特征提取器及高性能各版本推理引擎。
@@ -61,6 +121,8 @@ AstraTTS 默认使用 **V1 引擎 (推荐)**。V2 目前仍处于较低成熟阶
 | **采样参数** | ❌ 确定性生成 (不支持 TopK/Temp) | ✅ 支持 TopK / Temp / NoiseScale |
 | **并发能力** | ✅ 支持 (Inference Pool) | ✅ 支持 |
 
+---
+
 #### 📂 模型与资源目录
 
 资源结构（1.1.x+ 版本）：
@@ -80,26 +142,6 @@ resources/
 
 ---
 
-## 📦 整合包使用说明
-
-### 对于 Windows 用户 (`-win64.zip`)：
-1. **下载并解压** 整合包。
-2. **启动 Web 控制面板**: 运行 `astra-server.exe`。
-3. **访问界面**: 浏览器打开 `http://localhost:5000`。
-   - 在“模型转换”页可导入 SoVITS 模型。
-   - 在“音色库管理”页可上传参考音频并调整参数。
-4. **命令行单次播音**: 运行 `astra-cli.exe` 进行本地低延迟朗读。
-
-### 对于 Linux 用户 (`-linux64.tar.gz`)：
-1. **下载并直接解压**: `tar -xzvf AstraTTS-v*-linux64.tar.gz`
-2. **初始化模型转换环境**: 
-   - Linux 环境由于未内嵌数百 MB 的 Python 构建环境，需要手动初始化依赖。
-   - 在解压后的根目录运行：`./init-env.sh` (此脚本将在 `tools/converter/.venv` 下自动搭建所需的轻量级虚拟环境)。
-3. **启动引擎**:
-   - `chmod +x astra-server && ./astra-server` 即可启动 Web 服务。
-   - 本地体验可以同样执行 `./astra-cli --text "测试"`。
-
----
 
 ## ⚙️ 配置文件说明 (`config.yaml`)
 
@@ -142,30 +184,6 @@ Avatars:
 ### 构建与发布
 - **Windows**: 运行 `publish.ps1`。
 - **Linux**: 运行 `publish-linux.sh`。
-
-### Docker 部署 (推荐服务器使用)
-项目内置了由多阶段构建优化的 Dockerfile，并且已通过 Git LFS 集成模型。只需简单几步即可完成原生级部署：
-
-```bash
-# 1. 克隆代码仓库 (如果你是第一次下载代码)
-git clone https://github.com/Blackwood416/AstraTTS.git
-cd AstraTTS
-
-# 2. 拉取 Git LFS 模型资源 (非常重要，否则由于资源文件全在 LFS，会导致构建出来的镜像缺少模型)
-git lfs pull
-
-# 3. 极速构建 Docker 镜像 (依赖的 apt 与 pip 已默认使用清华源，请稍作等待)
-docker build -t astratts-server:latest .
-
-# 4. 运行容器
-# 建议通过 -v 参数将本地的 resources 目录挂载进容器内部，以便于你随时在宿主机管理和更新模型文件。
-docker run -d --name astratts \
-  -p 5000:5000 \
-  -v ./resources:/app/resources \
-  astratts-server:latest
-```
-
-容器启动后，在浏览器访问 `http://localhost:5000` 即可见到完整的 Web 控制面板。所有的配置热重载、音色库管理以及模型转换功能均可完美在容器中工作。
 
 ## 📄 许可证
 MIT License

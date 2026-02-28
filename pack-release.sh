@@ -30,18 +30,7 @@ else
     echo -e "\n⚠️ 未找到 publish-linux 目录，跳过打包 Linux。提示: 请先运行 ./publish-linux.sh"
 fi
 
-# 2. 单独打包核心资源依赖库
-if [ -d "resources-minimal" ]; then
-    RES_ZIP="$RELEASE_DIR/AstraTTS-resources-minimal-$VERSION.zip"
-    rm -f "$RES_ZIP"
-    echo -e "\n正在压缩独立资源包 (resources-minimal) -> $RES_ZIP ..."
-    
-    zip -r "$RES_ZIP" resources-minimal > /dev/null
-    
-    echo "✅ 独立资源包打包完成！"
-else
-    echo -e "\n⚠️ 未找到 resources-minimal 目录，跳过核心资源的单独打包。"
-fi
+
 
 echo -e "\n🎉 所有打包作业均已进入: $(realpath "$RELEASE_DIR")"
 echo -e "提示: 现在可以直接前往 Releases 页面上传 '$RELEASE_DIR' 内的文件了。"

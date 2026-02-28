@@ -45,4 +45,15 @@ if (Test-Path "publish") {
     Write-Host "`n⚠️ 未找到 publish 目录，跳过打包 Windows。" -ForegroundColor Yellow
 }
 
+# 打包独立资源包 (resources-minimal)
+if (Test-Path "resources-minimal") {
+    $resZip = "$ReleaseDir/AstraTTS-resources-minimal-$Version.zip"
+    if (Test-Path $resZip) { Remove-Item $resZip -Force }
+    Write-Host "`n正在压缩独立资源包 (resources-minimal) -> $resZip ..." -ForegroundColor Yellow
+    Compress-WithProgress -SourcePath "resources-minimal" -DestinationPath $resZip
+    Write-Host "✅ 独立资源包打包完成！" -ForegroundColor Green
+} else {
+    Write-Host "`n⚠️ 未找到 resources-minimal 目录，跳过打包核心资源。" -ForegroundColor Yellow
+}
+
 Write-Host "`n🎉 所有打包作业均已完成进入: $(Resolve-Path $ReleaseDir)" -ForegroundColor Cyan
