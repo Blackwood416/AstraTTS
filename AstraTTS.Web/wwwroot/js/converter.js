@@ -28,7 +28,8 @@ const Converter = {
         });
         document.getElementById('fp-up').addEventListener('click', () => {
              if (this.fpCurrentDir) {
-                 const parent = this.fpCurrentDir.split(/[\/\\]/).slice(0, -1).join('\\') || '';
+                 const separator = this.fpCurrentDir.includes('\\') ? '\\' : '/';
+                 const parent = this.fpCurrentDir.split(/[\/\\]/).slice(0, -1).join(separator) || separator;
                  this.browseDir(parent);
              }
         });
@@ -85,7 +86,8 @@ const Converter = {
                 item.className = 'fp-item ' + (e.isDir ? 'dir' : 'file');
                 
                 // 后端不直接提供 fullPath，在前端拼接
-                const fullPath = data.current.replace(/[\/\\]$/, '') + '\\' + e.name;
+                const separator = data.current.includes('\\') ? '\\' : '/';
+                const fullPath = data.current.replace(/[\/\\]$/, '') + separator + e.name;
 
                 item.innerHTML = `
                     <span class="icon">${e.isDir ? '📁' : '📄'}</span>
