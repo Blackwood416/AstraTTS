@@ -99,6 +99,15 @@ docker run -d --name astratts \
 
 After the container starts, access `http://localhost:5000` in your browser to see the complete Web management dashboard. Config hot-reloading, voice bank management, AND model conversion UI are all fully supported while running inside the container.
 
+### 3. LAN Access (Cross-Device Usage)
+
+If you want to access the Web dashboard from other phones or computers on the same local network, you can use ASP.NET's built-in command-line argument `--urls` to specify listening on all network interfaces:
+
+- **Windows**: Open a terminal (PowerShell or CMD) and run `.\astra-server.exe --urls "http://0.0.0.0:5000"`
+- **Linux**: Run `./astra-server --urls "http://0.0.0.0:5000"`
+
+After starting, simply enter the LAN IP address of this computer in the browser of other devices to access it (for example, `http://192.168.1.100:5000`).
+
 ---
 
 ## 📦 Project Structure
