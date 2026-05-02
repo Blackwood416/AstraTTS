@@ -85,8 +85,10 @@ git clone https://github.com/Blackwood416/AstraTTS.git
 cd AstraTTS
 
 # 2. 准备模型资源
-# 请从 GitHub Releases 或夸克网盘下载 resources-minimal.zip 
-# 解压并确保其位于项目根目录下的 resources-minimal/ 文件夹内
+# 从 GitHub Releases 快速下载并解压核心资源 (请根据实际版本号调整文件名)
+wget https://github.com/Blackwood416/AstraTTS/releases/latest/download/AstraTTS-resources-minimal.zip
+unzip AstraTTS-resources-minimal.zip
+rm AstraTTS-resources-minimal.zip
 
 # 3. 极速构建 Docker 镜像 (已针对国内网络加速，依赖的 apt 与 pip 已默认使用清华源，docker 镜像文件使用渡渡鸟镜像同步站 https://docker.aityp.com/ 提供的加速节点，如果发现节点无法访问可以自行修改 Dockerfile 中的镜像源)
 docker build -t astratts-server:latest .
