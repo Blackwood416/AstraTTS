@@ -28,7 +28,7 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
 
 ### ✨ New Features & Improvements
 - 🐳 **Native Docker Support** - Includes a streamlined Dockerfile for deployment, built on `.NET 10 (Ubuntu Noble)` and a native Python environment. Extremely fast and easy zero-config startup setup. Dependencies like `apt` and `pip` are pre-configured to use Tsinghua mirrors by default for network acceleration in mainland China.
-- 🗃️ **Git LFS Resource Hosting** - `resources-minimal` (core models, dictionaries) and `tools` (model converter scripts) are now fully version-controlled via Git LFS. Simply run `git lfs pull` to seamlessly acquire all required components natively, bidding farewell to manual configuration package downloads.
+- 🗃️ **Independent Resource Hosting** - `resources-minimal` (core models, dictionaries) and `tools` (model converter scripts) have been moved to GitHub Releases and cloud drives for independent hosting. Users only need to download the resource package and extract it to the project root directory to run quickly, avoiding excessive Git repository size and LFS bandwidth costs.
 - 🔄 **WebUI Quick Reset** - The Web management dashboard now features a one-click reset option, making it convenient for users to initialize or restore disorganized global configurations, optimizing the debugging experience.
 - 🐧 **Linux Audio Adaptation** - The audio playback component in the CLI for Linux environments now features intelligent silent fallback handling (`pw-play` -> `paplay` -> `aplay`), significantly improving compatibility across different distributions.
 - 🚀 **Full v2ProPlus & Concurrency Support** - Continues to maintain and optimize parallel loading capabilities and concurrent synthesis processing for models based on the GPT-SoVITS V2ProPlus architecture.
@@ -72,19 +72,18 @@ For users in mainland China, it is highly recommended to download the fully inte
    - For local CLI testing, you can similarly execute `./astra-cli --text "Testing"`.
 
 ### 2. Docker Deployment (Recommended for Servers)
-The project includes a Dockerfile optimized by multi-stage builds. You can deploy it by either pulling via Git LFS or by directly downloading the standalone model package (`resources-minimal`):
+The project includes a Dockerfile optimized by multi-stage builds. You can deploy it by downloading the standalone model package (`resources-minimal`):
 
-- **Alternative Download without Git LFS**: If it is inconvenient for you to use `git lfs` to acquire the 1GB models, you can go to the Quark Drive link above, download `resources-minimal.zip`, and extract/overwrite it into the `resources-minimal` folder within the source root directory.
+- **Resource Acquisition**: Due to the large size of the core models, they are no longer hosted via Git LFS. Please go to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) or the Quark Drive link above to download `AstraTTS-resources-minimal-v*.zip`, and extract it into the `resources-minimal` folder within the source root directory.
 
 ```bash
 # 1. Clone the code repository
 git clone https://github.com/Blackwood416/AstraTTS.git
 cd AstraTTS
 
-# 2. Prepare model resources (Choose ONE)
-# Option A: Pull Git LFS Model Resources (Recommended)
-git lfs pull
-# Option B: Extract the downloaded resources-minimal.zip and overwrite the current resources-minimal folder
+# 2. Prepare model resources
+# Please download resources-minimal.zip from GitHub Releases or Quark Drive
+# Extract and ensure it is located in the resources-minimal/ folder in the project root
 
 # 3. Super-fast Docker image build (Optimized for domestic networks, apt and pip dependencies use Tsinghua mirrors by default. The docker image utilizes acceleration nodes provided by the Dodo mirror sync station https://docker.aityp.com/. If you find the node inaccessible, you can manually modify the registry mirror in the Dockerfile)
 docker build -t astratts-server:latest .

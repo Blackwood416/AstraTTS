@@ -28,7 +28,7 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 
 ### ✨ 新增功能与改进
 - 🐳 **原生 Docker 支持** - 提供极简优化的 Dockerfile 部署，基于 `.NET 10 (Ubuntu Noble)` 和原生 Python 环境构建。一键启动，免除环境配置烦恼，针对国内网络环境已默认启用清华源加速。
-- 🗃️ **Git LFS 资源托管** - `resources-minimal` （核心模型、词典）及 `tools`（模型转换器脚本）现已完全并入 Git LFS 进行版本控制。 `git lfs pull` 即可无缝获取运行所需的所有完整组件，告别手动下载配置压缩包。
+- 🗃️ **核心资源独立托管** - `resources-minimal` （核心模型、词典）及 `tools`（模型转换器脚本）现已移至 GitHub Releases 与网盘进行独立托管。用户只需下载资源包并解压至项目根目录即可快速运行，避免了 Git 仓库体积过大及 LFS 流量开销问题。
 - 🔄 **WebUI 快速重置** - Web 管理面板新增一键重置功能，方便用户随时初始化或恢复打乱的全局配置，优化调试体验。
 - 🐧 **Linux 音频适配** - Linux 环境下自带 CLI 的音频播放组件实现了智能静默认降级处理（`pw-play` -> `paplay` -> `aplay`），提升不同发行版兼容性。
 - 🚀 **全面支持 v2ProPlus 及并发增强** - 继续保留并优化对于 GPT-SoVITS V2ProPlus 架构模型的并行加载能力及并发合成处理。
@@ -72,19 +72,18 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
    - 本地体验可以同样执行 `./astra-cli --text "测试"`。
 
 ### 2. Docker 部署 (推荐服务器使用)
-项目内置了由多阶段构建优化的 Dockerfile。你可以通过拉取 Git LFS 或者直接下载模型独立包 (`resources-minimal`) 来部署：
+项目内置了由多阶段构建优化的 Dockerfile。你可以通过下载模型独立包 (`resources-minimal`) 来部署：
 
-- **无需 Git LFS 的下载方式**: 如果你不方便使用 `git lfs` 获取 1GB 的模型，可以前往上方夸克网盘链接下载 `resources-minimal.zip` ，并解压覆盖到源码根目录下的 `resources-minimal` 文件夹中。
+- **模型资源获取**: 由于核心模型体积较大，项目不再通过 Git LFS 托管。请前往 [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) 或上方的夸克网盘链接下载 `AstraTTS-resources-minimal-v*.zip`，并将其解压到源码根目录下的 `resources-minimal` 文件夹中。
 
 ```bash
 # 1. 克隆代码仓库
 git clone https://github.com/Blackwood416/AstraTTS.git
 cd AstraTTS
 
-# 2. 准备模型资源 (二选一)
-# 方式 A: 拉取 Git LFS 模型资源 (推荐)
-git lfs pull
-# 方式 B: 将下载好的 resources-minimal.zip 解压覆盖当前目录的 resources-minimal 文件夹
+# 2. 准备模型资源
+# 请从 GitHub Releases 或夸克网盘下载 resources-minimal.zip 
+# 解压并确保其位于项目根目录下的 resources-minimal/ 文件夹内
 
 # 3. 极速构建 Docker 镜像 (已针对国内网络加速，依赖的 apt 与 pip 已默认使用清华源，docker 镜像文件使用渡渡鸟镜像同步站 https://docker.aityp.com/ 提供的加速节点，如果发现节点无法访问可以自行修改 Dockerfile 中的镜像源)
 docker build -t astratts-server:latest .

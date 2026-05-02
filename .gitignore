@@ -109,17 +109,27 @@ AstraTTS.Core/GenieData(Optional)/
 
 # Resource files
 resources/
-# resources-minimal/ (Now tracked via LFS)
-!resources-minimal/
-!resources-minimal/**
+# Resources (Too large for Git)
+resources-minimal/
 # Ignore subdirectories in resources-minimal if they are user-specific
 #resources-minimal/avatars/
 #resources-minimal/models_v1/
 
 # Tools files
-# tools/ (Now tracked via LFS)
-!tools/
-!tools/**
+# Tools (Large assets moved to Releases)
+tools/converter/runtime/
+tools/converter/__pycache__/
+# If you want to ignore everything in tools except specific files:
+# tools/*
+# !tools/converter/
+# tools/converter/*
+# !tools/converter/v1_converter.py
+# ... but for now let's just ignore the obvious large ones if the user wants tools in Releases.
+# Actually, the user said they are moving tools to Releases too. 
+# So let's ignore the whole tools/ folder but keep the code if possible?
+# No, let's follow the user: "tools（模型转换器脚本）现已移至 GitHub Releases".
+# This means they don't want them in Git.
+tools/
 tools/converter/runtime/
 
 # Publish results

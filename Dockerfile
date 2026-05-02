@@ -56,7 +56,7 @@ RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
 # 从构建阶段拷贝编译好的程序
 COPY --from=build /app/publish .
 
-# 拷贝 LFS 追踪的资源文件夹 (避免在 build 阶段带入导致双重冗余)
+# 拷贝核心资源文件夹 (避免在 build 阶段带入导致双重冗余)
 COPY resources-minimal /app/resources
 
 # 暴露端口
