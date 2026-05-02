@@ -54,8 +54,8 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
 
 ### 1. Portable Package Quick Start (Windows / Linux)
 For users in mainland China, it is highly recommended to download the fully integrated environment packages (containing all runtime environments and default models) via **Quark Drive**.
-- **Download Link**: [https://pan.quark.cn/s/f971fa67e940](https://pan.quark.cn/s/f971fa67e940)
-- **Access Code**: `QXYk`
+- **Download Link**: [https://pan.quark.cn/s/416fa9f65f3b](https://pan.quark.cn/s/416fa9f65f3b)
+- **Access Code**: `y8Wx`
 
 #### For Windows Users (`-win64.zip`):
 1. **Download and Extract** the integration package.
@@ -77,7 +77,7 @@ For users in mainland China, it is highly recommended to download the fully inte
 ### 2. Docker Deployment (Recommended for Servers)
 The project includes a Dockerfile optimized by multi-stage builds. You can deploy it by downloading the standalone model package (`resources-minimal`):
 
-- **Resource Acquisition**: Due to the large size of the core models, they are no longer hosted via Git LFS. Please go to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) or the Quark Drive link above to download `AstraTTS-resources-minimal-v*.zip`, and extract it into the `resources-minimal` folder within the source root directory.
+- **Resource Acquisition**: Due to the large size of the core models, they are no longer hosted via Git LFS. Please go to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) to download `resources-minimal.zip`, and extract it into the `resources-minimal` folder within the source root directory.
 
 ```bash
 # 1. Clone the code repository
@@ -85,10 +85,10 @@ git clone https://github.com/Blackwood416/AstraTTS.git
 cd AstraTTS
 
 # 2. Prepare model resources
-# Download and extract core resources from GitHub Releases (Adjust filename as needed)
-wget https://github.com/Blackwood416/AstraTTS/releases/latest/download/AstraTTS-resources-minimal.zip
-unzip AstraTTS-resources-minimal.zip
-rm AstraTTS-resources-minimal.zip
+# Fast download and extract core resources from GitHub Releases
+wget https://github.com/Blackwood416/AstraTTS/releases/latest/download/resources-minimal.zip
+unzip resources-minimal.zip
+rm resources-minimal.zip
 
 # 3. Super-fast Docker image build (Optimized for domestic networks, apt and pip dependencies use Tsinghua mirrors by default. The docker image utilizes acceleration nodes provided by the Dodo mirror sync station https://docker.aityp.com/. If you find the node inaccessible, you can manually modify the registry mirror in the Dockerfile)
 docker build -t astratts-server:latest .
