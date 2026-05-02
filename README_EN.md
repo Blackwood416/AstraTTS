@@ -20,6 +20,9 @@
   <a href="https://jq.qq.com/?_wv=1027&k=yvN60wYc"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-1083409411-blue?style=flat-square&logo=qq"></a>
 </p>
 
+> [!IMPORTANT]
+> **Important Notice**: Due to the large size of core models and high Git LFS overhead, this project has **stopped using Git LFS**. Core resources (`resources-minimal`) and tool scripts (`tools`) have been moved to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) for independent hosting. **Users building from source or using Docker must manually download the resource package and extract it to the project root directory.**
+
 ---
 
 ## 📢 New Version v1.2.1 Released!

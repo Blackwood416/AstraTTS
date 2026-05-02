@@ -20,6 +20,9 @@
   <a href="https://jq.qq.com/?_wv=1027&k=yvN60wYc"><img src="https://img.shields.io/badge/QQ%E7%BE%A4-1083409411-blue?style=flat-square&logo=qq"></a>
 </p>
 
+> [!IMPORTANT]
+> **重要说明**：由于核心模型体积较大且 Git LFS 开销较高，项目现已**停止使用 Git LFS**。核心资源（`resources-minimal`）和工具脚本（`tools`）现已移至 [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) 独立托管。**从源码构建或使用 Docker 的用户，请务必手动下载资源包并解压至项目根目录。**
+
 ---
 
 ## 📢 新版本 v1.2.1 发布！
