@@ -21,7 +21,7 @@
 </p>
 
 > [!IMPORTANT]
-> **Important Notice**: Due to the large size of core models and high Git LFS overhead, this project has **stopped using Git LFS**. Core resources (`resources-minimal`) and tool scripts (`tools`) have been moved to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) for independent hosting. **Users building from source or using Docker must manually download the resource package and extract it to the project root directory.**
+> **Important Notice**: Due to the large size of core models and high Git LFS overhead, this project has **stopped using Git LFS**. Core resources (`resources-minimal`) have been moved to [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) for independent hosting. **Users building from source or using Docker must manually download the resource package and extract it to the project root directory.**
 
 ---
 
@@ -31,7 +31,6 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
 
 ### ✨ New Features & Improvements
 - 🐳 **Native Docker Support** - Includes a streamlined Dockerfile for deployment, built on `.NET 10 (Ubuntu Noble)` and a native Python environment. Extremely fast and easy zero-config startup setup. Dependencies like `apt` and `pip` are pre-configured to use Tsinghua mirrors by default for network acceleration in mainland China.
-- 🗃️ **Independent Resource Hosting** - `resources-minimal` (core models, dictionaries) and `tools` (model converter scripts) have been moved to GitHub Releases and cloud drives for independent hosting. Users only need to download the resource package and extract it to the project root directory to run quickly, avoiding excessive Git repository size and LFS bandwidth costs.
 - 🔄 **WebUI Quick Reset** - The Web management dashboard now features a one-click reset option, making it convenient for users to initialize or restore disorganized global configurations, optimizing the debugging experience.
 - 🐧 **Linux Audio Adaptation** - The audio playback component in the CLI for Linux environments now features intelligent silent fallback handling (`pw-play` -> `paplay` -> `aplay`), significantly improving compatibility across different distributions.
 - 🚀 **Full v2ProPlus & Concurrency Support** - Continues to maintain and optimize parallel loading capabilities and concurrent synthesis processing for models based on the GPT-SoVITS V2ProPlus architecture.

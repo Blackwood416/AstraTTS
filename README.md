@@ -21,7 +21,7 @@
 </p>
 
 > [!IMPORTANT]
-> **重要说明**：由于核心模型体积较大且 Git LFS 开销较高，项目现已**停止使用 Git LFS**。核心资源（`resources-minimal`）和工具脚本（`tools`）现已移至 [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) 独立托管。**从源码构建或使用 Docker 的用户，请务必手动下载资源包并解压至项目根目录。**
+> **重要说明**：由于核心模型体积较大且 Git LFS 开销较高，项目现已**停止使用 Git LFS**。核心资源（`resources-minimal`）现已移至 [GitHub Releases](https://github.com/Blackwood416/AstraTTS/releases) 独立托管。**从源码构建或使用 Docker 的用户，请务必手动下载资源包并解压至项目根目录。**
 
 ---
 
@@ -31,7 +31,6 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 
 ### ✨ 新增功能与改进
 - 🐳 **原生 Docker 支持** - 提供极简优化的 Dockerfile 部署，基于 `.NET 10 (Ubuntu Noble)` 和原生 Python 环境构建。一键启动，免除环境配置烦恼，针对国内网络环境已默认启用清华源加速。
-- 🗃️ **核心资源独立托管** - `resources-minimal` （核心模型、词典）及 `tools`（模型转换器脚本）现已移至 GitHub Releases 与网盘进行独立托管。用户只需下载资源包并解压至项目根目录即可快速运行，避免了 Git 仓库体积过大及 LFS 流量开销问题。
 - 🔄 **WebUI 快速重置** - Web 管理面板新增一键重置功能，方便用户随时初始化或恢复打乱的全局配置，优化调试体验。
 - 🐧 **Linux 音频适配** - Linux 环境下自带 CLI 的音频播放组件实现了智能静默认降级处理（`pw-play` -> `paplay` -> `aplay`），提升不同发行版兼容性。
 - 🚀 **全面支持 v2ProPlus 及并发增强** - 继续保留并优化对于 GPT-SoVITS V2ProPlus 架构模型的并行加载能力及并发合成处理。
