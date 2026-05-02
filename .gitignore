@@ -89,6 +89,7 @@ custom_dict.txt
 # Model files (too large for git)
 *.onnx
 *.onnx.data
+!tools/converter/templates/*.onnx
 
 # Resources (user should provide their own)
 AstraTTS.Core/models/
