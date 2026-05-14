@@ -1,7 +1,7 @@
 # AstraTTS
 
 <p align="center">
-  <img src="images/banner.png" alt="AstraTTS Banner" width="800">
+  <img src="images/banner.png" alt="AstraTTS Banner" width="400">
 </p>
 
 <p align="center">
@@ -43,11 +43,14 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
 - ⚖️ **High Concurrency Support** - Built-in inference pool design allows simultaneous processing of multiple synthesis requests, fully utilizing multi-core CPU resources.
 - 🎵 **Streaming Output** - Millisecond-level first-chunk latency, supporting "play-while-synthesizing" to say goodbye to stuttering.
 - 🎭 **Visual Management** - Powerful WebUI dashboard covering voice bank management, model conversion, and parameter tuning.
+
 <div style="display: flex; justify-content: space-around; flex-wrap: wrap;">
   <img src="images/webui_light_theme.png" alt="WebUI Light Theme" style="width: 30%; margin: 10px;">
+  <img src="images/voice_manager_light_theme.png" alt="Voice Manager Light Theme" style="width: 30%; margin: 10px;">
   <img src="images/webui_dark_theme.png" alt="WebUI Dark Theme" style="width: 30%; margin: 10px;">
-  <img src="images/model_converter_dark_theme.png" alt="Model Converter" style="width: 30%; margin: 10px;">
+  <img src="images/model_converter_dark_theme.png" alt="Model Converter Dark Theme" style="width: 30%; margin: 10px;">
 </div>
+
 - 🐧 **Multi-Platform Support** - Native support for Windows 10/11, with full compatibility achieved for Linux (such as Ubuntu, Arch, WSL).
 - 🌐 **Multi-Language Support** - Robust support for ZH-EN and ZH-JA bilingual mixing (trilingual mixing is still in development).
 - 🔄 **Hot Reload** - Configuration changes can take effect immediately while the service is running.
