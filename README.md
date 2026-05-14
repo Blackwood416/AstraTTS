@@ -44,12 +44,28 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 - 🎵 **流式输出** - 毫秒级首包延迟，支持边合成边播放，告别卡顿。
 - 🎭 **可视化管理** - 强大的 WebUI 面板，涵盖音色管理、模型转换与参数调节。
 
-<div style="display: flex; justify-content: space-around; flex-wrap: wrap;">
-  <img src="images/webui_light_theme.png" alt="WebUI Light Theme" style="width: 20%; margin: 10px;">
-  <img src="images/voice_manager_light_theme.png" alt="Voice Manager Light Theme" style="width: 20%; margin: 10px;">
-  <img src="images/webui_dark_theme.png" alt="WebUI Dark Theme" style="width: 20%; margin: 10px;">
-  <img src="images/model_converter_dark_theme.png" alt="Model Converter" style="width: 20%; margin: 10px;">
-</div>
+<table>
+  <tr>
+    <td align="center">
+      <img src="images/webui_light_theme.png" width="300" alt="WebUI Light Theme" /><br/>
+      <b>合成实验室（亮色主题）</b>
+    </td>
+    <td align="center">
+      <img src="images/voice_manager_light_theme.png" width="300" alt="Voice Manager Light Theme" /><br/>
+      <b>音色库管理（亮色主题）</b>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="images/webui_dark_theme.png" width="300" alt="WebUI Dark Theme" /><br/>
+      <b>控制中心（暗色主题）</b>
+    </td>
+    <td align="center">
+      <img src="images/model_converter_dark_theme.png" width="300" alt="Model Converter Dark Theme" /><br/>
+      <b>模型转换（暗色主题）</b>
+    </td>
+  </tr>
+</table>
 
 - 🐧 **多平台支持** - 原生支持 Windows 10/11，并已实现 Linux (如 Ubuntu, Arch, WSL) 的完整兼容。
 - 🌐 **多语言支持** - 完善的中/英、中/日双语混读支持（三语混合尚在开发中）。
