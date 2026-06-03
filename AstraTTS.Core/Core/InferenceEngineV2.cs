@@ -69,7 +69,9 @@ namespace AstraTTS.Core.Core
         {
             var options = new SessionOptions();
 
-            // 线程配置
+            bool isMac = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX);
+
+            // 线程配置 (与 Win/Linux 保持一致，由用户在 config 显式指定)
             options.IntraOpNumThreads = config.IntraOpNumThreads;
             options.InterOpNumThreads = config.InterOpNumThreads;
             options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
@@ -86,11 +88,35 @@ namespace AstraTTS.Core.Core
             // 内存优化
             options.EnableCpuMemArena = true;
 
+            // mac 调度延迟较大，开启 spinning 反而能降低延迟
+            options.AddSessionConfigEntry("session.intra_op.allow_spinning", isMac ? "1" : "0");
+
             if (config.UseDirectML && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 options.EnableMemoryPattern = false;
                 options.AppendExecutionProvider_DML(0);
                 DebugLog("DirectML 加速已启用");
+            }
+            else if (isMac && config.UseCoreML)
+            {
+                options.EnableMemoryPattern = false;
+                try
+                {
+                    var coremlOptions = new Dictionary<string, string>
+                    {
+                        ["EnableOnSubgraphs"] = (config.CoreMLFlags & 0x2) != 0 ? "1" : "0",
+                        ["MLComputeUnits"] = (config.CoreMLFlags & 0x4) != 0 ? "ANEOnly" : "ALL",
+                        ["ModelFormat"] = (config.CoreMLFlags & 0x10) != 0 ? "MLProgram" : "NeuralNetwork",
+                        ["RequireStaticInputShapes"] = (config.CoreMLFlags & 0x8) != 0 ? "1" : "0",
+                    };
+                    options.AppendExecutionProvider("CoreML", coremlOptions);
+                    DebugLog($"CoreML 加速已启用 (V2/macOS) flags=0x{config.CoreMLFlags:X}");
+                }
+                catch (Exception ex)
+                {
+                    DebugLog($"⚠️ CoreML 加速启用失败，已回退至 CPU: {ex.Message}");
+                    options.EnableMemoryPattern = true;
+                }
             }
             else
             {
@@ -100,6 +126,30 @@ namespace AstraTTS.Core.Core
             }
 
             return options;
+        }
+
+        private static int GetMacPerformanceCoreCount()
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "sysctl",
+                    Arguments = "-n hw.perflevel0.physicalcpu",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var p = Process.Start(psi);
+                if (p != null)
+                {
+                    string output = p.StandardOutput.ReadToEnd().Trim();
+                    p.WaitForExit(500);
+                    if (int.TryParse(output, out int v) && v > 0) return v;
+                }
+            }
+            catch { }
+            return Math.Max(1, Environment.ProcessorCount / 2);
         }
 
         // ============================================================

@@ -134,3 +134,6 @@ venv/
 *.temp
 *.bak
 *.swp
+
+/releases/
+/publish-mac-arm64/

@@ -26,11 +26,21 @@ UseEngineV2: false
 
 # --- ONNX Runtime 性能与并行配置 ---
 # IntraOpNumThreads: 算子内部并行线程数。建议设为物理核心数(如 4, 8, 16)，0 代表自动
+# (macOS 自动模式会智能选择性能核数 P-Core，避免能效核拖累性能)
 IntraOpNumThreads: 0
 # InterOpNumThreads: 算子间并行线程数。TTS 链式结构建议设为 1，0 代表自动
 InterOpNumThreads: 0
 # GraphOptimizationLevel: 图优化级别 (0=禁用, 1=基础, 2=全部)。
 GraphOptimizationLevel: 1
+
+# --- 硬件加速 ---
+# UseDirectML: 仅 Windows 有效，启用 GPU 加速 (DirectX 12)
+UseDirectML: false
+# UseCoreML: 仅 macOS 有效。默认 false：实测对 GPT-SoVITS 模型 CoreML 反而比纯 CPU 慢
+# (因子图切分 + ANE/CPU 数据搬运开销)。仅在你的模型确实受益时再尝试开启。
+UseCoreML: false
+# CoreMLFlags: CoreML 标志位 (按位或)，2=子图回退；4=优先 ANE；16=MLProgram 格式
+CoreMLFlags: 2
 
 # 推理会话池容量：支持的最大并发合成请求数
 PoolCapacity: 1

@@ -67,7 +67,7 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
   </tr>
 </table>
 
-- 🐧 **多平台支持** - 原生支持 Windows 10/11，并已实现 Linux (如 Ubuntu, Arch, WSL) 的完整兼容。
+- 🐧 **多平台支持** - 原生支持 Windows 10/11，并已实现 Linux (如 Ubuntu, Arch, WSL) 与 macOS (Apple Silicon / Intel) 的完整兼容。
 - 🌐 **多语言支持** - 完善的中/英、中/日双语混读支持（三语混合尚在开发中）。
 - 🔄 **热重载** - 配置项可以在服务运行时即刻生效。
 
@@ -75,7 +75,7 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 
 ## 📦 安装与部署指南
 
-### 1. 整合包极速体验 (Windows / Linux)
+### 1. 整合包极速体验 (Windows / Linux / macOS)
 推荐国内用户通过 **夸克网盘** 下载完整的环境整合包（内含所有运行环境与默认模型）。
 - **获取链接**: [https://pan.quark.cn/s/416fa9f65f3b](https://pan.quark.cn/s/416fa9f65f3b)
 - **提取码**: `y8Wx`
@@ -96,6 +96,26 @@ AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 
 3. **启动引擎**:
    - `chmod +x astra-server && ./astra-server` 即可启动 Web 服务。
    - 本地体验可以同样执行 `./astra-cli --text "测试"`。
+
+#### 对于 macOS 用户 (`-macOS-arm64.dmg` / `-macOS-x64.dmg` 或 `.tar.gz`)：
+
+支持 Apple Silicon (M1/M2/M3/M4) 与 Intel Mac，仅使用 v1 推理引擎。
+
+**方式 A：DMG 安装包（推荐）**
+1. **下载** 与你的 Mac 架构对应的 `AstraTTS-v*-macOS-arm64.dmg`（Apple Silicon）或 `-macOS-x64.dmg`（Intel）。
+2. **双击挂载** DMG，将 `AstraTTS.app` 拖入 `Applications`。
+3. **首次启动**：在 `Applications` 中右键 `AstraTTS.app` → "打开" 以绕过 Gatekeeper（仅首次需要）。Web 控制面板会自动在浏览器打开。
+4. **可选**：安装 `ffmpeg` 以获得低延迟流式播放：`brew install ffmpeg`。
+
+**方式 B：tar.gz 整合包**
+1. **下载并解压**：`tar -xzvf AstraTTS-v*-macOS-arm64.tar.gz`
+2. **解除 quarantine**：`xattr -dr com.apple.quarantine .`
+3. **初始化模型转换环境（可选）**：`./init-env-mac.sh`（自动检测/安装 ffmpeg、搭建 Python 虚拟环境）。
+4. **启动引擎**：
+   - Web 服务：`./astra-server`，浏览器访问 `http://localhost:5000`。
+   - CLI 体验：`./astra-cli --text "你好世界"`。
+
+> 注意：macOS 版仅启用 **v1 推理引擎**，v2 / v2ProPlus 暂未在 macOS 上启用。
 
 ### 2. Docker 部署 (推荐服务器使用)
 项目内置了由多阶段构建优化的 Dockerfile。你可以通过下载模型独立包 (`resources-minimal`) 来部署：
@@ -216,10 +236,16 @@ Avatars:
 - **Linux**: 支持基于 x86_64 或 ARM64 的主流发行版（如 Ubuntu 22.04+, Arch Linux, WSL2）。
   - **Linux 依赖**: 需要安装 `dotnet-runtime-10.0`。
   - **Linux 播音**: CLI 模式下推荐安装 `alsa-utils` (`aplay`) 或 `pulseaudio` (`paplay`)。
+- **macOS**: macOS 11 (Big Sur) 及以上，支持 Apple Silicon (arm64) 与 Intel (x64)。
+  - **macOS 播音**: CLI 流式播放推荐 `brew install ffmpeg`（提供 `ffplay`）。系统自带 `afplay` 仅支持非流式播放。
+  - macOS 版仅使用 v1 推理引擎。
 
 ### 构建与发布
 - **Windows**: 运行 `publish.ps1`。
 - **Linux**: 运行 `publish-linux.sh`。
+- **macOS**: 运行 `publish-mac.sh`（自动检测架构，可选传 `arm64` / `x64`）。
+  - 生成 `.tar.gz` 整合包：`./pack-release.sh`
+  - 生成 `.dmg` 安装包：`./pack-mac-dmg.sh`（需在 macOS 主机上执行）。
 
 ## 📄 许可证
 MIT License

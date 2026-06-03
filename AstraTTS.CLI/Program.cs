@@ -23,7 +23,6 @@ namespace AstraTTS.CLI
             // Set console encoding to UTF-8 to support Chinese and Japanese input/output
             Console.InputEncoding = System.Text.Encoding.UTF8;
             Console.OutputEncoding = System.Text.Encoding.UTF8;
-
             PrintBanner();
 
             // Parse arguments
@@ -314,7 +313,7 @@ namespace AstraTTS.CLI
             // Setup audio output
             bool isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
             IDisposable? waveOut = null;
-            LinuxAudioPlayer? linuxPlayer = null;
+            UnixAudioPlayer? unixPlayer = null;
 
             if (isWindows)
             {
@@ -336,9 +335,9 @@ namespace AstraTTS.CLI
             }
             else
             {
-                linuxPlayer = new LinuxAudioPlayer();
-                linuxPlayer.Init(sdk.SamplingRate);
-                waveOut = linuxPlayer;
+                unixPlayer = new UnixAudioPlayer();
+                unixPlayer.Init(sdk.SamplingRate);
+                waveOut = unixPlayer;
             }
 
             using var pipeline = new AudioPipeline(sdk.SamplingRate, 20, 20);
@@ -364,7 +363,7 @@ namespace AstraTTS.CLI
                     }
                     else
                     {
-                        linuxPlayer?.AddSamples(pcmBytes, 0, pcmLen);
+                        unixPlayer?.AddSamples(pcmBytes, 0, pcmLen);
                     }
                 }
                 finally
@@ -375,7 +374,7 @@ namespace AstraTTS.CLI
                 if (!playbackStarted && chunkCount >= preBufferChunks)
                 {
                     if (isWindows) (waveOut as WasapiOut)?.Play();
-                    else linuxPlayer?.Play();
+                    else unixPlayer?.Play();
                     playbackStarted = true;
                 }
 
@@ -395,7 +394,7 @@ namespace AstraTTS.CLI
                 try
                 {
                     if (isWindows) lockFreeProvider.AddSamples(pcmBytes, 0, pcmLen);
-                    else linuxPlayer?.AddSamples(pcmBytes, 0, pcmLen);
+                    else unixPlayer?.AddSamples(pcmBytes, 0, pcmLen);
                 }
                 finally { ArrayPool<byte>.Shared.Return(pcmBytes); }
             }
@@ -408,7 +407,7 @@ namespace AstraTTS.CLI
             if (!playbackStarted)
             {
                 if (isWindows) (waveOut as WasapiOut)?.Play();
-                else linuxPlayer?.Play();
+                else unixPlayer?.Play();
             }
 
             // Wait for playback to finish
@@ -418,12 +417,12 @@ namespace AstraTTS.CLI
             }
             else
             {
-                linuxPlayer?.WaitForFinish();
+                unixPlayer?.WaitForFinish();
             }
             await Task.Delay(200);
 
             if (isWindows) (waveOut as WasapiOut)?.Stop();
-            else linuxPlayer?.Stop();
+            else unixPlayer?.Stop();
 
             waveOut?.Dispose();
             sw.Stop();
@@ -438,29 +437,52 @@ namespace AstraTTS.CLI
         }
 
         /// <summary>
-        /// Linux 环境下的音频播放器，通过管道 (Pipe) 调用系统播放器
+        /// Unix (Linux/macOS) 环境下的音频播放器，通过管道 (Pipe) 调用系统播放器
+        /// macOS 下若未安装 ffplay/sox，则降级使用 afplay 缓存写文件方案
         /// </summary>
-        class LinuxAudioPlayer : IDisposable
+        class UnixAudioPlayer : IDisposable
         {
             private Process? _process;
             private Stream? _stdin;
             private string _command = "aplay";
             private bool _isStarted = false;
+            private bool _isMac = false;
+
+            // afplay 降级模式：将 PCM 累积写入临时 WAV，每隔一段时间播放一次
+            private MemoryStream? _pcmBuffer;
+            private int _sampleRate;
+            private readonly object _bufLock = new();
+            private string? _tempWavPath;
 
             public void Init(int sampleRate)
             {
-                // 探测播放器
-                if (CanRun("pw-play")) _command = "pw-play";
-                else if (CanRun("paplay")) _command = "paplay";
-                else if (CanRun("aplay")) _command = "aplay";
-                else if (CanRun("ffplay")) _command = "ffplay";
+                _sampleRate = sampleRate;
+                _isMac = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX);
+
+                // 探测播放器（优先选择支持 stdin 的）
+                if (CanRun("ffplay")) _command = "ffplay";
+                else if (CanRun("play")) _command = "play"; // sox
+                else if (!_isMac && CanRun("pw-play")) _command = "pw-play";
+                else if (!_isMac && CanRun("paplay")) _command = "paplay";
+                else if (!_isMac && CanRun("aplay")) _command = "aplay";
+                else if (_isMac && CanRun("afplay")) _command = "afplay"; // 文件回退
+                else _command = _isMac ? "afplay" : "aplay";
+
+                // afplay 不支持 stdin，使用文件回退模式
+                if (_command == "afplay")
+                {
+                    _pcmBuffer = new MemoryStream();
+                    _tempWavPath = Path.Combine(Path.GetTempPath(), $"astratts_stream_{Guid.NewGuid():N}.wav");
+                    return;
+                }
 
                 var args = _command switch
                 {
+                    "ffplay" => $"-f s16le -ar {sampleRate} -ac 1 -nodisp -autoexit -loglevel quiet -i pipe:0",
+                    "play" => $"-q -t raw -r {sampleRate} -e signed -b 16 -c 1 -",
                     "pw-play" => $"--format=s16 --rate={sampleRate} --channels=1 -",
                     "paplay" => $"--format=s16le --rate={sampleRate} --channels=1 --raw",
-                    "aplay" => $"-f S16_LE -r {sampleRate} -c 1",
-                    "ffplay" => $"-f s16le -ar {sampleRate} -ac 1 -nodisp -autoexit -i pipe:0",
+                    "aplay" => $"-q -f S16_LE -r {sampleRate} -c 1",
                     _ => ""
                 };
 
@@ -480,7 +502,7 @@ namespace AstraTTS.CLI
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[LinuxAudio] 无法初始化播放进程 ({_command}): {ex.Message}");
+                    Console.WriteLine($"[UnixAudio] 无法初始化播放进程 ({_command}): {ex.Message}");
                 }
             }
 
@@ -493,7 +515,7 @@ namespace AstraTTS.CLI
                         FileName = "which",
                         Arguments = cmd,
                         RedirectStandardOutput = true,
-                        RedirectStandardError = true, // Hide 'which: no pw-play in ...'
+                        RedirectStandardError = true,
                         UseShellExecute = false,
                         CreateNoWindow = true
                     });
@@ -506,6 +528,12 @@ namespace AstraTTS.CLI
             public void Play()
             {
                 if (_isStarted) return;
+                if (_command == "afplay")
+                {
+                    // 文件回退模式：在 WaitForFinish 时统一播放
+                    _isStarted = true;
+                    return;
+                }
                 try
                 {
                     _process?.Start();
@@ -514,12 +542,17 @@ namespace AstraTTS.CLI
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[LinuxAudio] 启动播放失败: {ex.Message}");
+                    Console.WriteLine($"[UnixAudio] 启动播放失败: {ex.Message}");
                 }
             }
 
             public void AddSamples(byte[] buffer, int offset, int count)
             {
+                if (_command == "afplay")
+                {
+                    lock (_bufLock) { _pcmBuffer?.Write(buffer, offset, count); }
+                    return;
+                }
                 try
                 {
                     _stdin?.Write(buffer, offset, count);
@@ -530,9 +563,53 @@ namespace AstraTTS.CLI
 
             public void WaitForFinish()
             {
-                // 关闭 stdin 触发播放器结束
+                if (_command == "afplay")
+                {
+                    // 写入完整 WAV 文件后用 afplay 阻塞播放
+                    try
+                    {
+                        if (_pcmBuffer == null || _tempWavPath == null) return;
+                        byte[] pcm;
+                        lock (_bufLock) { pcm = _pcmBuffer.ToArray(); }
+                        WriteWavFile(_tempWavPath, pcm, _sampleRate);
+                        var p = Process.Start(new ProcessStartInfo
+                        {
+                            FileName = "afplay",
+                            Arguments = $"\"{_tempWavPath}\"",
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        });
+                        p?.WaitForExit();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[UnixAudio] afplay 播放失败: {ex.Message}");
+                    }
+                    return;
+                }
                 _stdin?.Close();
-                _process?.WaitForExit(2000);
+                _process?.WaitForExit(5000);
+            }
+
+            private static void WriteWavFile(string path, byte[] pcm, int sampleRate)
+            {
+                using var fs = File.Create(path);
+                using var bw = new BinaryWriter(fs);
+                int byteRate = sampleRate * 2; // 16-bit mono
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+                bw.Write(36 + pcm.Length);
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+                bw.Write(16);
+                bw.Write((short)1);
+                bw.Write((short)1);
+                bw.Write(sampleRate);
+                bw.Write(byteRate);
+                bw.Write((short)2);
+                bw.Write((short)16);
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+                bw.Write(pcm.Length);
+                bw.Write(pcm);
             }
 
             public void Stop()
@@ -548,6 +625,10 @@ namespace AstraTTS.CLI
             {
                 Stop();
                 _process?.Dispose();
+                if (_tempWavPath != null && File.Exists(_tempWavPath))
+                {
+                    try { File.Delete(_tempWavPath); } catch { }
+                }
             }
         }
 

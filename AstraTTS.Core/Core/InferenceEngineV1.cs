@@ -34,13 +34,21 @@ namespace AstraTTS.Core.Core
 
         public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config)
         {
+            return GetSessionOptions(config, useCoreML: config.UseCoreML);
+        }
+
+        /// <summary>
+        /// 创建 SessionOptions，可显式控制是否启用 CoreML（用于失败回退）。
+        /// </summary>
+        public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config, bool useCoreML)
+        {
             var sessionOptions = new SessionOptions();
 
-            // ============================================================
-            // 性能优化配置
-            // ============================================================
+            bool isMac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
             // 1. 线程配置
+            //    保持与 Win/Linux 一致：不干预 ORT 的默认行为（用户可在 config 中显式指定）。
+            //    实测在 Apple Silicon 上限制为 P-Core 数反而损失 GEMM 吞吐量。
             sessionOptions.IntraOpNumThreads = config.IntraOpNumThreads;
             sessionOptions.InterOpNumThreads = config.InterOpNumThreads;
 
@@ -60,13 +68,14 @@ namespace AstraTTS.Core.Core
             sessionOptions.EnableCpuMemArena = true;
             sessionOptions.EnableMemoryPattern = true;
 
-            // 5. 减少 CPU 空转等待
-            sessionOptions.AddSessionConfigEntry("session.intra_op.allow_spinning", "0");
+            // 5. CPU 自旋
+            sessionOptions.AddSessionConfigEntry(
+                "session.intra_op.allow_spinning",
+                isMac ? "1" : "0");
 
-            // 6. DirectML 配置 (如果启用且在 Windows 平台)
+            // 6. DirectML
             if (config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                // DirectML 不支持 MemoryPattern
                 sessionOptions.EnableMemoryPattern = false;
                 sessionOptions.AppendExecutionProvider_DML(0);
                 DebugLog("DirectML 加速已启用 (Windows)");
@@ -76,7 +85,96 @@ namespace AstraTTS.Core.Core
                 DebugLog("DirectML 仅在 Windows 上可用，当前平台已忽略该配置。");
             }
 
+            // 7. CoreML (仅 macOS, 且启用)
+            if (isMac && useCoreML)
+            {
+                try
+                {
+                    sessionOptions.EnableMemoryPattern = false;
+
+                    var coremlOptions = new Dictionary<string, string>
+                    {
+                        ["EnableOnSubgraphs"] = (config.CoreMLFlags & 0x2) != 0 ? "1" : "0",
+                        ["MLComputeUnits"] = (config.CoreMLFlags & 0x4) != 0 ? "ANEOnly" : "ALL",
+                        ["ModelFormat"] = (config.CoreMLFlags & 0x10) != 0 ? "MLProgram" : "NeuralNetwork",
+                        ["RequireStaticInputShapes"] = (config.CoreMLFlags & 0x8) != 0 ? "1" : "0",
+                    };
+                    sessionOptions.AppendExecutionProvider("CoreML", coremlOptions);
+                    DebugLog($"CoreML 加速已启用 (macOS) flags=0x{config.CoreMLFlags:X}");
+                }
+                catch (Exception ex)
+                {
+                    DebugLog($"⚠️ CoreML 加速启用失败，已回退至 CPU: {ex.Message}");
+                }
+            }
+
             return sessionOptions;
+        }
+
+        /// <summary>
+        /// 加载模型，CoreML 编译失败时自动按模型回退到 CPU。
+        /// </summary>
+        private InferenceSession LoadModelWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
+        {
+            bool isMac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+            // 如果 mac 且启用 CoreML，先尝试 CoreML，失败再回退 CPU
+            if (isMac && config.UseCoreML)
+            {
+                try
+                {
+                    return new InferenceSession(modelPath, GetSessionOptions(config, useCoreML: true));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [CoreML] 模型 '{Path.GetFileName(modelPath)}' 编译失败，回退至 CPU: {ex.Message}");
+                    // CoreML 编译失败，退回纯 CPU
+                    return new InferenceSession(modelPath, GetSessionOptions(config, useCoreML: false));
+                }
+            }
+            return new InferenceSession(modelPath, GetSessionOptions(config));
+        }
+
+        /// <summary>
+        /// 获取 macOS 性能核 (P-Core) 数量，用于设置最优 IntraOpNumThreads。
+        /// 对于 Apple Silicon: M1=4P, M2=4P, M3=4P, M2 Pro=6/8P, M3 Pro=5/6P 等。
+        /// 对于 Intel Mac: 返回物理核数。
+        /// </summary>
+        private static int GetMacPerformanceCoreCount()
+        {
+            try
+            {
+                // sysctl hw.perflevel0.physicalcpu 返回 P 核数（仅 Apple Silicon 有此键）
+                int p = ReadSysctlInt("hw.perflevel0.physicalcpu");
+                if (p > 0) return p;
+                // 回退到物理核数
+                int phys = ReadSysctlInt("hw.physicalcpu");
+                if (phys > 0) return phys;
+            }
+            catch { }
+            // 最终回退：逻辑核 / 2
+            int lp = Environment.ProcessorCount;
+            return Math.Max(1, lp / 2);
+        }
+
+        private static int ReadSysctlInt(string key)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "sysctl",
+                    Arguments = $"-n {key}",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p == null) return 0;
+                string output = p.StandardOutput.ReadToEnd().Trim();
+                p.WaitForExit(500);
+                return int.TryParse(output, out int v) ? v : 0;
+            }
+            catch { return 0; }
         }
 
         public void LoadModels(string modelDir, AstraTTS.Core.Config.TTSConfig config, string? hubertPath = null, string? svPath = null)
@@ -86,30 +184,30 @@ namespace AstraTTS.Core.Core
             var opt = GetSessionOptions(config);
 
             Parallel.Invoke(
-                () => _t2sEncoder = new InferenceSession(Path.Combine(modelDir, "t2s_encoder.onnx"), opt),
-                () => _firstStageDecoder = new InferenceSession(Path.Combine(modelDir, "t2s_first_stage_decoder.onnx"), opt),
-                () => _stageDecoder = new InferenceSession(Path.Combine(modelDir, "t2s_stage_decoder.onnx"), opt),
-                () => _vocoder = new InferenceSession(Path.Combine(modelDir, "vits.onnx"), opt),
+                () => _t2sEncoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_encoder.onnx"), config),
+                () => _firstStageDecoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_first_stage_decoder.onnx"), config),
+                () => _stageDecoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_stage_decoder.onnx"), config),
+                () => _vocoder = LoadModelWithFallback(Path.Combine(modelDir, "vits.onnx"), config),
                 () =>
                 {
                     string promptEncoderPath = Path.Combine(modelDir, "prompt_encoder.onnx");
                     if (File.Exists(promptEncoderPath))
                     {
-                        _promptEncoder = new InferenceSession(promptEncoderPath, opt);
+                        _promptEncoder = LoadModelWithFallback(promptEncoderPath, config);
                     }
                 },
                 () =>
                 {
                     if (!string.IsNullOrEmpty(hubertPath) && File.Exists(hubertPath))
                     {
-                        _hubert = new InferenceSession(hubertPath, opt);
+                        _hubert = LoadModelWithFallback(hubertPath, config);
                     }
                 },
                 () =>
                 {
                     if (!string.IsNullOrEmpty(svPath) && File.Exists(svPath))
                     {
-                        _svModel = new InferenceSession(svPath, opt);
+                        _svModel = LoadModelWithFallback(svPath, config);
                     }
                 }
             );
