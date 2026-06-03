@@ -216,6 +216,25 @@ namespace AstraTTS.Core.Config
 
         public bool UseDirectML { get; set; } = false;
 
+        /// <summary>
+        /// 是否启用 CoreML 加速（仅 macOS 有效）。
+        /// 默认关闭：实测对 GPT-SoVITS 这类带循环控制流的模型，CoreML 子图切分反而比纯 CPU 慢，
+        /// 且首次加载需 ANE 编译耗时数十秒。仅在你确认自己的模型受益时开启。
+        /// </summary>
+        public bool UseCoreML { get; set; } = false;
+
+        /// <summary>
+        /// CoreML 加速标志位组合（仅 macOS 有效）。
+        /// 0   = 默认 (CPU + ANE + GPU 全用)
+        /// 1   = COREML_FLAG_USE_CPU_ONLY (仅 CPU，不推荐)
+        /// 2   = COREML_FLAG_ENABLE_ON_SUBGRAPH (子图回退)
+        /// 4   = COREML_FLAG_ONLY_ENABLE_DEVICE_WITH_ANE (优先 ANE)
+        /// 8   = COREML_FLAG_ONLY_ALLOW_STATIC_INPUT_SHAPES
+        /// 16  = COREML_FLAG_CREATE_MLPROGRAM (使用 MLProgram 格式，更现代但兼容性略差)
+        /// 推荐: 2 (子图回退) 以兼顾兼容性
+        /// </summary>
+        public uint CoreMLFlags { get; set; } = 2;
+
         // ============================================================
         // 性能配置
         // ============================================================

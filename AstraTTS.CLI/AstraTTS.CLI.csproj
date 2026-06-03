@@ -12,6 +12,8 @@
     <AssemblyName>astra-cli</AssemblyName>
     <AssemblyVersion>1.2.1</AssemblyVersion>
     <Version>1.2.1</Version>
+    <!-- 跨平台 (Linux/macOS) 发布时，对 Windows 专用 API 的告警 (NAudio WasapiOut 等) 已通过运行时判断隔离，关闭误报。 -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
 </Project>
