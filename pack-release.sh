@@ -3,7 +3,7 @@
 # AstraTTS 资源与发布整合打包脚本 (Linux & macOS)
 # 自动检测可用的 publish-* 目录并打包
 
-VERSION="v1.2.1"
+VERSION="v1.2.2"
 RELEASE_DIR="releases"
 
 mkdir -p "$RELEASE_DIR"

@@ -6,12 +6,12 @@
 #
 # 用法:
 #   ./pack-mac-dmg.sh [VERSION] [OUTPUT_DIR]
-#   默认 VERSION=v1.2.1, OUTPUT_DIR=releases
+#   默认 VERSION=v1.2.2, OUTPUT_DIR=releases
 # ==========================================
 
 set -e
 
-VERSION="${1:-v1.2.1}"
+VERSION="${1:-v1.2.2}"
 OUTPUT_DIR="${2:-releases}"
 APP_NAME="AstraTTS"
 BUNDLE_ID="com.astratts.app"
