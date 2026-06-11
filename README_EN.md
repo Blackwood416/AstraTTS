@@ -73,7 +73,7 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
   </tr>
 </table>
 
-- 🐧 **Multi-Platform Support** - Native support for Windows 10/11, with full compatibility achieved for Linux (such as Ubuntu, Arch, WSL).
+- 🐧 **Multi-Platform Support** - Native support for Windows 10/11, with full compatibility achieved for Linux (such as Ubuntu, Arch, WSL) and macOS (Apple Silicon / Intel).
 - 🌐 **Multi-Language Support** - Robust support for ZH-EN and ZH-JA bilingual mixing (trilingual mixing is still in development).
 - 🔄 **Hot Reload** - Configuration changes can take effect immediately while the service is running.
 
@@ -81,7 +81,7 @@ AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upg
 
 ## 📦 Installation and Deployment Guide
 
-### 1. Portable Package Quick Start (Windows / Linux)
+### 1. Portable Package Quick Start (Windows / Linux / macOS)
 For users in mainland China, it is highly recommended to download the fully integrated environment packages (containing all runtime environments and default models) via **Quark Drive**.
 - **Download Link**: [https://pan.quark.cn/s/416fa9f65f3b](https://pan.quark.cn/s/416fa9f65f3b)
 - **Access Code**: `y8Wx`
@@ -100,8 +100,28 @@ For users in mainland China, it is highly recommended to download the fully inte
    - Because the Linux environment does not embed the hundreds of MBs required for the Python build environment, you need to manually initialize the dependencies.
    - Run in the extracted root directory: `./init-env.sh` (this script will automatically set up the required lightweight virtual environment under `tools/converter/.venv`).
 3. **Start the Engine**:
-   - `chmod +x astra-server && ./astra-server` to start the Web service.
+   - Web service: `./astra-server` and visit `http://localhost:5000` in your browser.
    - For local CLI testing, you can similarly execute `./astra-cli --text "Testing"`.
+
+#### For macOS Users (`-macOS-arm64.dmg` / `-macOS-x64.dmg` or `.tar.gz`):
+
+Supports Apple Silicon (M1/M2/M3/M4) and Intel Macs, using the V1 inference engine only.
+
+**Method A: DMG Installer (Recommended)**
+1. **Download** the `AstraTTS-v*-macOS-arm64.dmg` (Apple Silicon) or `-macOS-x64.dmg` (Intel) corresponding to your Mac architecture.
+2. **Double-click to mount** the DMG, and drag `AstraTTS.app` into `Applications`.
+3. **First-time startup**: Right-click `AstraTTS.app` in `Applications` → "Open" to bypass Gatekeeper (only required for the first run). The Web control panel will automatically open in your browser.
+4. **Optional**: Install `ffmpeg` for low-latency streaming playback: `brew install ffmpeg`.
+
+**Method B: tar.gz Portable Package**
+1. **Download and Extract**: `tar -xzvf AstraTTS-v*-macOS-arm64.tar.gz`
+2. **Clear Quarantine**: `xattr -dr com.apple.quarantine .`
+3. **Initialize Converter Environment (Optional)**: `./init-env-mac.sh` (automatically detects/installs ffmpeg and sets up a Python virtual environment).
+4. **Start the Engine**:
+   - Web Service: `./astra-server`, and visit `http://localhost:5000` in your browser.
+   - CLI Experience: `./astra-cli --text "Hello World"`.
+
+> Note: The macOS version only enables the **V1 inference engine**. V2 / V2ProPlus are not supported on macOS yet.
 
 ### 2. Docker Deployment (Recommended for Servers)
 The project includes a Dockerfile optimized by multi-stage builds. You can deploy it by downloading the standalone model package (`resources-minimal`):
@@ -137,7 +157,7 @@ After the container starts, access `http://localhost:5000` in your browser to se
 If you want to access the Web dashboard from other phones or computers on the same local network, you can use ASP.NET's built-in command-line argument `--urls` to specify listening on all network interfaces:
 
 - **Windows**: Open a terminal (PowerShell or CMD) and run `.\astra-server.exe --urls "http://0.0.0.0:5000"`
-- **Linux**: Run `./astra-server --urls "http://0.0.0.0:5000"`
+- **Linux / macOS**: Run `./astra-server --urls "http://0.0.0.0:5000"`
 
 After starting, simply enter the LAN IP address of this computer in the browser of other devices to access it (for example, `http://192.168.1.100:5000`).
 
@@ -222,10 +242,16 @@ Avatars:
 - **Linux**: Supports major distributions based on x86_64 or ARM64 (e.g., Ubuntu 22.04+, Arch Linux, WSL2).
   - **Linux Dependencies**: Needs `dotnet-runtime-10.0` installed.
   - **Linux Playback**: In CLI mode, it's recommended to install `alsa-utils` (`aplay`) or `pulseaudio` (`paplay`).
+- **macOS**: macOS 11 (Big Sur) or above, supporting Apple Silicon (arm64) and Intel (x64).
+  - **macOS Playback**: For CLI streaming playback, `brew install ffmpeg` is recommended (provides `ffplay`). The system-default `afplay` only supports non-streaming playback.
+  - The macOS version only uses the V1 inference engine.
 
 ### Build & Publish
 - **Windows**: Run `publish.ps1`.
 - **Linux**: Run `publish-linux.sh`.
+- **macOS**: Run `publish-mac.sh` (automatically detects architecture, optionally pass `arm64` / `x64`).
+  - Generate `.tar.gz` package: `./pack-release.sh`
+  - Generate `.dmg` installer: `./pack-mac-dmg.sh` (needs to be executed on a macOS host).
 
 ## 📄 License
 MIT License
