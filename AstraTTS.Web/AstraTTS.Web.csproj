@@ -5,8 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>astra-server</AssemblyName>
-    <AssemblyVersion>1.2.1</AssemblyVersion>
-    <Version>1.2.1</Version>
+    <AssemblyVersion>1.2.2</AssemblyVersion>
+    <Version>1.2.2</Version>
     <!-- 跨平台 (Linux/macOS) 发布时关闭 Windows 专用 API 的误报告警。 -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>

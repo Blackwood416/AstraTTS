@@ -25,7 +25,13 @@
 
 ---
 
-## 📢 新版本 v1.2.1 发布！
+## 📢新版本 v1.2.2 发布！
+
+新增MacOS支持，来自 [#3](https://github.com/Blackwood416/AstraTTS/pull/3)
+
+非常感谢 [Domination888](https://github.com/Domination888) 提交的PR！
+
+## v1.2.1 更新日志
 
 AstraTTS v1.2.1 带来了全面的部署优化和体验升级，特别是针对 Linux 与容器化环境的支持。
 
@@ -258,3 +264,8 @@ MIT License
 - [NAudio](https://github.com/naudio/NAudio) - .NET 音频处理。
 - [wasapi_relink](https://github.com/Litttlefish/wasapi_relink) - WASAPI 低延迟优化辅助组件。
 - [BreakingBad (AI-Hobbyist)](https://www.ai-hobbyist.com/thread-1143-1-1.html) - 整合包内置默认模型来源。
+
+## 💕 贡献者
+<a href="https://github.com/Domination888"> 
+<img src="https://avatars.githubusercontent.com/u/191233038?s=64&v=4" alt="Domination888">
+</a>

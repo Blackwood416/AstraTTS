@@ -25,7 +25,13 @@
 
 ---
 
-## 📢 New Version v1.2.1 Released!
+## 📢 New Version v1.2.2 Released!
+
+Added macOS support, from [#3](https://github.com/Blackwood416/AstraTTS/pull/3)
+
+Big thanks to [Domination888](https://github.com/Domination888) for submitting the PR!
+
+## v1.2.1 Changelog
 
 AstraTTS v1.2.1 brings comprehensive deployment optimizations and experience upgrades, particularly for Linux and containerized environments.
 
@@ -232,3 +238,8 @@ MIT License
 - [NAudio](https://github.com/naudio/NAudio) - .NET audio processing.
 - [wasapi_relink](https://github.com/Litttlefish/wasapi_relink) - WASAPI low-latency helper component.
 - [BreakingBad (AI-Hobbyist)](https://www.ai-hobbyist.com/thread-1143-1-1.html) - Source of the built-in default models for the integration package.
+
+## 💕 Contributors
+<a href="https://github.com/Domination888"> 
+<img src="https://avatars.githubusercontent.com/u/191233038?s=64&v=4" alt="Domination888">
+</a>
