@@ -78,6 +78,12 @@ namespace AstraTTS.Core.Core
         public int StreamingChunkSize { get; set; } = 24;
 
         /// <summary>
+        /// 流式声码器重触发阈值的增长因子。声码器对累计 token 全量重算，
+        /// 提高该因子可减少重算总量（降低长文本压力），代价是分块延迟变大。
+        /// </summary>
+        public float VocoderRetriggerFactor { get; set; } = 1.5f;
+
+        /// <summary>
         /// 请求的音色 ID（可选）。如果设置，引擎会在推理前切换到该音色。
         /// </summary>
         public string? AvatarId { get; set; }

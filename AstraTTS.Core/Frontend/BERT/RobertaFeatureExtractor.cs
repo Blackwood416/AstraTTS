@@ -12,7 +12,14 @@ namespace AstraTTS.Core.Frontend.BERT
     {
         private readonly Tokenizers.HuggingFace.Tokenizer.Tokenizer _tokenizer;
         private readonly InferenceSession _session;
+        private readonly object _inferenceLock = new object();
         public bool DebugMode { get; set; } = false;
+
+        /// <summary>
+        /// 是否串行化推理。DirectML 要求同一 Session 不得并发 Run；
+        /// V1 流式模式会为多句并行预取 BERT 特征，因此启用 DML 时必须串行。
+        /// </summary>
+        public bool SerializeInference { get; set; } = false;
 
         public RobertaFeatureExtractor(string modelPath, string tokenizerJsonPath, SessionOptions? options = null)
         {
@@ -96,8 +103,21 @@ namespace AstraTTS.Core.Frontend.BERT
                 NamedOnnxValue.CreateFromTensor("repeats", new DenseTensor<long>(inferenceRepeats, new[] { inferenceRepeats.Length }))
             };
 
-            using var results = _session.Run(inputs);
-            var outputValue = results.First().Value;
+            IDisposableReadOnlyCollection<DisposableNamedOnnxValue> results;
+            if (SerializeInference)
+            {
+                // DirectML 同 Session 禁止并发 Run；多句流式预取会并发进入这里。
+                lock (_inferenceLock)
+                {
+                    results = _session.Run(inputs);
+                }
+            }
+            else
+            {
+                results = _session.Run(inputs);
+            }
+            using var _results = results;
+            var outputValue = _results.First().Value;
 
             // 5. 解析输出维度并转换 (模型已内置对齐，直接读取即可)
             ReadOnlySpan<int> dims = outputValue switch

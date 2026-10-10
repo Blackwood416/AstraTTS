@@ -36,6 +36,16 @@ GraphOptimizationLevel: 1
 # --- 硬件加速 ---
 # UseDirectML: 仅 Windows 有效，启用 GPU 加速 (DirectX 12)
 UseDirectML: false
+# DirectMLDeviceId: DirectML 使用的适配器编号 (0 = 默认/主显卡)，多显卡机器可指定独显
+DirectMLDeviceId: 0
+# UseDeviceKvCache: 启用设备端 KV 缓存（仅 UseDirectML=true 时生效）
+# 开启后解码阶段的 K/V 与 y_emb 常驻显存，避免每 token 复制 48 个张量回主机内存；
+# 设备路径出错时会自动回退经典路径。默认 true。
+UseDeviceKvCache: true
+# UseVocoderDirectML: 混合模式，仅声码器 (vits) 使用 DirectML GPU，其余模型保持 CPU（仅 Windows）。
+# 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立（UseDirectML=true 时忽略）。
+# 声码器 DML 加载失败会自动回退 CPU。默认 false。
+UseVocoderDirectML: false
 # UseCoreML: 仅 macOS 有效。默认 false：实测对 GPT-SoVITS 模型 CoreML 反而比纯 CPU 慢
 # (因子图切分 + ANE/CPU 数据搬运开销)。仅在你的模型确实受益时再尝试开启。
 UseCoreML: false
@@ -52,6 +62,10 @@ Speed: 1.0                       # 语速控制 (0.5 - 2.0)
 StreamingMode: true              # CLI是否默认开启流式播放反馈
 StreamingChunkSize: 22           # 流式合成的 Token 分块大小（越小延迟越低，但 CPU 压力越大）
 StreamingPreBufferChunks: 2      # 音频预缓冲块数（减少生成卡顿）
+# VocoderRetriggerFactor: 流式声码器重触发阈值的增长因子 (1.2 - 4.0)。
+# 声码器每次调用都对"累计全部 token"重算，单句总计算量约为最终 token 数的 2~3 倍。
+# 提高该因子（如 2.0）可显著减少重算、降低长文本压力，代价是音频分块间隔变大、首包后延迟略增。
+VocoderRetriggerFactor: 1.5
 
 # WASAPI 独占模式（仅影响本地 CLI/Windows 服务直接输出，不影响 Web 流传输）
 WasapiExclusiveMode: false

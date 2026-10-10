@@ -27,6 +27,25 @@ namespace AstraTTS.Core.Core
         private InferenceSession? _stageDecoder;
         private InferenceSession? _vocoder;
 
+        // DirectML 设备端 KV 解码循环（惰性创建；失败后本进程内停用）。
+        private DmlKvDecodeLoop? _deviceKvLoop;
+        private bool _deviceKvDisabled;
+        private readonly object _deviceKvLock = new object();
+
+        // 解码循环名称与索引缓存：避免每 token 的 LINQ 按名查找与字符串插值。
+        private const int KvLayerCount = 24;
+        private static readonly string[] PastKNames = BuildLayerNames("past_k_layer_");
+        private static readonly string[] PastVNames = BuildLayerNames("past_v_layer_");
+        private static readonly string[] PresentKNames = BuildLayerNames("present_k_layer_");
+        private static readonly string[] PresentVNames = BuildLayerNames("present_v_layer_");
+
+        private static string[] BuildLayerNames(string prefix)
+        {
+            var names = new string[KvLayerCount];
+            for (int i = 0; i < KvLayerCount; i++) names[i] = prefix + i;
+            return names;
+        }
+
         // V2ProPlus 组件
         private InferenceSession? _promptEncoder;
         private InferenceSession? _hubert;
@@ -41,6 +60,23 @@ namespace AstraTTS.Core.Core
         /// 创建 SessionOptions，可显式控制是否启用 CoreML（用于失败回退）。
         /// </summary>
         public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config, bool useCoreML)
+        {
+            return GetSessionOptions(config, useCoreML, forceCpu: false);
+        }
+
+        /// <summary>
+        /// 创建 SessionOptions。
+        /// </summary>
+        /// <param name="config">全局配置。</param>
+        /// <param name="useCoreML">是否允许 CoreML（仅 macOS）。</param>
+        /// <param name="forceCpu">
+        /// 强制纯 CPU：用于 DirectML 不兼容的模型。已实测 prompt_encoder 在 DML 上
+        /// 会话初始化即访问违例（进程级崩溃，无法捕获），必须留在 CPU。
+        /// </param>
+        /// <param name="forceDml">
+        /// 强制启用 DirectML（即使 config.UseDirectML=false）。用于混合模式的声码器加载。
+        /// </param>
+        public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config, bool useCoreML, bool forceCpu, bool forceDml = false)
         {
             var sessionOptions = new SessionOptions();
 
@@ -74,13 +110,14 @@ namespace AstraTTS.Core.Core
                 isMac ? "1" : "0");
 
             // 6. DirectML
-            if (config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            bool wantDml = !forceCpu && (config.UseDirectML || forceDml);
+            if (wantDml && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 sessionOptions.EnableMemoryPattern = false;
-                sessionOptions.AppendExecutionProvider_DML(0);
-                DebugLog("DirectML 加速已启用 (Windows)");
+                sessionOptions.AppendExecutionProvider_DML(config.DirectMLDeviceId);
+                DebugLog($"DirectML 加速已启用 (Windows, device={config.DirectMLDeviceId}{(forceDml && !config.UseDirectML ? ", 混合模式声码器" : "")})");
             }
-            else if (config.UseDirectML)
+            else if (wantDml)
             {
                 DebugLog("DirectML 仅在 Windows 上可用，当前平台已忽略该配置。");
             }
@@ -116,6 +153,17 @@ namespace AstraTTS.Core.Core
         /// </summary>
         private InferenceSession LoadModelWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
         {
+            return LoadModelWithFallback(modelPath, config, forceCpu: false);
+        }
+
+        private InferenceSession LoadModelWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config, bool forceCpu)
+        {
+            if (forceCpu)
+            {
+                DebugLog($"[CPU] 模型 '{Path.GetFileName(modelPath)}' 使用纯 CPU（DirectML 不兼容）。");
+                return new InferenceSession(modelPath, GetSessionOptions(config, config.UseCoreML, forceCpu: true));
+            }
+
             bool isMac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
             // 如果 mac 且启用 CoreML，先尝试 CoreML，失败再回退 CPU
             if (isMac && config.UseCoreML)
@@ -132,6 +180,29 @@ namespace AstraTTS.Core.Core
                 }
             }
             return new InferenceSession(modelPath, GetSessionOptions(config));
+        }
+
+        /// <summary>
+        /// 加载声码器。混合模式 (UseVocoderDirectML=true) 下仅声码器使用 DirectML，
+        /// 加载失败自动回退 CPU，不影响可用性。
+        /// </summary>
+        private InferenceSession LoadVocoderWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
+        {
+            if (config.UseVocoderDirectML && !config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                try
+                {
+                    var session = new InferenceSession(modelPath,
+                        GetSessionOptions(config, config.UseCoreML, forceCpu: false, forceDml: true));
+                    DebugLog("[CPU+GPU 混合] 声码器已使用 DirectML（其余模型保持在 CPU）");
+                    return session;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [混合模式] 声码器 DirectML 加载失败，回退 CPU: {ex.Message}");
+                }
+            }
+            return LoadModelWithFallback(modelPath, config);
         }
 
         /// <summary>
@@ -187,13 +258,15 @@ namespace AstraTTS.Core.Core
                 () => _t2sEncoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_encoder.onnx"), config),
                 () => _firstStageDecoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_first_stage_decoder.onnx"), config),
                 () => _stageDecoder = LoadModelWithFallback(Path.Combine(modelDir, "t2s_stage_decoder.onnx"), config),
-                () => _vocoder = LoadModelWithFallback(Path.Combine(modelDir, "vits.onnx"), config),
+                () => _vocoder = LoadVocoderWithFallback(Path.Combine(modelDir, "vits.onnx"), config),
                 () =>
                 {
                     string promptEncoderPath = Path.Combine(modelDir, "prompt_encoder.onnx");
                     if (File.Exists(promptEncoderPath))
                     {
-                        _promptEncoder = LoadModelWithFallback(promptEncoderPath, config);
+                        // prompt_encoder 在 DirectML 上会话初始化即原生崩溃（实测访问违例，无法 try/catch），
+                        // 且其 ReduceSum 也报 E_INVALIDARG；固定使用 CPU。
+                        _promptEncoder = LoadModelWithFallback(promptEncoderPath, config, forceCpu: config.UseDirectML);
                     }
                 },
                 () =>
@@ -383,6 +456,21 @@ namespace AstraTTS.Core.Core
                 // 原因：First Stage Decoder 输出也是非确定性的（包含随机采样）， sometimes producing "bad" state that causes Stage Decoder to fail immediately.
                 // 因此必须重试整个解码过程。
 
+                // --- DirectML 设备 KV 快路径 ---
+                // 若可用，K/V 与 y_emb 直接在显存中流转，避免每 token 往返主机内存。
+                // 任何异常都会停用该路径并回退到经典实现，保证输出一致性。
+                if (TryGetDeviceKvLoop(out var deviceLoop))
+                {
+                    try
+                    {
+                        return RunT2SDecodeDeviceKv(deviceLoop, x, prompts, textSeq, languageTags, options);
+                    }
+                    catch (Exception ex)
+                    {
+                        DisableDeviceKv("设备 KV 解码执行失败", ex);
+                    }
+                }
+
                 // 动态阈值：使用语种感知的乘数
                 int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
                 if (DebugMode) DebugLog($"[T2S] Min expected tokens: {minExpectedTokens} (textSeq.Length={textSeq.Length})");
@@ -406,8 +494,8 @@ namespace AstraTTS.Core.Core
 
                     using var firstStageResults = _firstStageDecoder.Run(firstStageInputs);
 
-                    var yTensor = firstStageResults.First(r => r.Name == "y").AsTensor<long>().Clone();
-                    var yEmbTensor = firstStageResults.First(r => r.Name == "y_emb").AsTensor<float>().Clone();
+                    var yTensor = firstStageResults.First(r => r.Name == "y").AsTensor<long>();
+                    var yEmbTensor = firstStageResults.First(r => r.Name == "y_emb").AsTensor<float>();
 
                     if (DebugMode)
                     {
@@ -422,50 +510,68 @@ namespace AstraTTS.Core.Core
                     }
 
                     // Capture First Stage Token (The first semantic token)
-                    generatedTokens.Add(yTensor.ToArray().Last());
+                    var firstDense = (DenseTensor<long>)yTensor;
+                    generatedTokens.Add(firstDense.Buffer.Span[firstDense.Buffer.Length - 1]);
 
-                    // 按顺序构建 KV Cache
-                    var kvCache = new List<Tensor<float>>();
-                    for (int layer = 0; layer < 24; layer++)
+                    // KV 缓存直接引用 First Stage 结果张量（不 Clone）；
+                    // firstStageResults 由 using 保持存活至本步解码结束。
+                    var currentKvCache = new Tensor<float>[KvLayerCount * 2];
+                    for (int layer = 0; layer < KvLayerCount; layer++)
                     {
-                        kvCache.Add(firstStageResults.First(r => r.Name == $"present_k_layer_{layer}").AsTensor<float>().Clone());
-                        kvCache.Add(firstStageResults.First(r => r.Name == $"present_v_layer_{layer}").AsTensor<float>().Clone());
+                        currentKvCache[layer * 2] = firstStageResults.First(r => r.Name == PresentKNames[layer]).AsTensor<float>();
+                        currentKvCache[layer * 2 + 1] = firstStageResults.First(r => r.Name == PresentVNames[layer]).AsTensor<float>();
                     }
 
                     // --- B. 运行 Stage Decoder Loop ---
-                    var currentYTensor = yTensor.Clone();
-                    var currentYEmbTensor = yEmbTensor.Clone();
-                    var currentKvCache = kvCache; // 已经在本次循环中新建，直接使用
-                    int numLayers = currentKvCache.Count / 2;
+                    var currentYTensor = yTensor;
+                    var currentYEmbTensor = yEmbTensor;
+                    int numLayers = KvLayerCount;
 
-                    for (int i = 0; i < 500; i++)
+                    // 生命周期：持有上一步结果集合，直到下一步 Run 消费完其张量后才释放。
+                    IDisposable? stageHolder = null;
+                    var stageInputs = new List<NamedOnnxValue>(2 + KvLayerCount * 2);
+
+                    try
                     {
-                        var stageInputs = new List<NamedOnnxValue>();
-                        stageInputs.Add(NamedOnnxValue.CreateFromTensor("iy", currentYTensor));
-                        stageInputs.Add(NamedOnnxValue.CreateFromTensor("iy_emb", currentYEmbTensor));
-
-                        for (int layer = 0; layer < numLayers; layer++)
+                        for (int i = 0; i < 500; i++)
                         {
-                            stageInputs.Add(NamedOnnxValue.CreateFromTensor($"past_k_layer_{layer}", currentKvCache[layer * 2]));
-                            stageInputs.Add(NamedOnnxValue.CreateFromTensor($"past_v_layer_{layer}", currentKvCache[layer * 2 + 1]));
+                            stageInputs.Clear();
+                            stageInputs.Add(NamedOnnxValue.CreateFromTensor("iy", currentYTensor));
+                            stageInputs.Add(NamedOnnxValue.CreateFromTensor("iy_emb", currentYEmbTensor));
+
+                            for (int layer = 0; layer < numLayers; layer++)
+                            {
+                                stageInputs.Add(NamedOnnxValue.CreateFromTensor(PastKNames[layer], currentKvCache[layer * 2]));
+                                stageInputs.Add(NamedOnnxValue.CreateFromTensor(PastVNames[layer], currentKvCache[layer * 2 + 1]));
+                            }
+
+                            var stageResults = _stageDecoder.Run(stageInputs);
+
+                            // 旧结果（本轮输入）已被本步 Run 消费完毕，现在才可释放
+                            stageHolder?.Dispose();
+                            stageHolder = stageResults;
+
+                            currentYTensor = stageResults.First(r => r.Name == "y").AsTensor<long>();
+                            currentYEmbTensor = stageResults.First(r => r.Name == "y_emb").AsTensor<float>();
+                            var stopCondition = stageResults.First(r => r.Name == "stop_condition_tensor").AsTensor<bool>().GetValue(0);
+
+                            for (int layer = 0; layer < numLayers; layer++)
+                            {
+                                currentKvCache[layer * 2] = stageResults.First(r => r.Name == PresentKNames[layer]).AsTensor<float>();
+                                currentKvCache[layer * 2 + 1] = stageResults.First(r => r.Name == PresentVNames[layer]).AsTensor<float>();
+                            }
+
+                            // 直接读张量缓冲末尾，避免 ToArray()
+                            var lastDense = (DenseTensor<long>)currentYTensor;
+                            var lastToken = lastDense.Buffer.Span[lastDense.Buffer.Length - 1];
+                            generatedTokens.Add(lastToken);
+
+                            if (stopCondition) break;
                         }
-
-                        using var stageResults = _stageDecoder.Run(stageInputs);
-                        currentYTensor = stageResults.First(r => r.Name == "y").AsTensor<long>().Clone();
-                        currentYEmbTensor = stageResults.First(r => r.Name == "y_emb").AsTensor<float>().Clone();
-                        var stopCondition = stageResults.First(r => r.Name == "stop_condition_tensor").AsTensor<bool>().First();
-
-                        currentKvCache.Clear();
-                        for (int layer = 0; layer < numLayers; layer++)
-                        {
-                            currentKvCache.Add(stageResults.First(r => r.Name == $"present_k_layer_{layer}").AsTensor<float>().Clone());
-                            currentKvCache.Add(stageResults.First(r => r.Name == $"present_v_layer_{layer}").AsTensor<float>().Clone());
-                        }
-
-                        var lastToken = currentYTensor.ToArray().Last();
-                        generatedTokens.Add(lastToken);
-
-                        if (stopCondition) break;
+                    }
+                    finally
+                    {
+                        stageHolder?.Dispose();
                     }
 
                     // --- C. 验证结果 ---
@@ -727,6 +833,33 @@ namespace AstraTTS.Core.Core
                 var x = encoderResults.First(r => r.Name == "x").AsTensor<float>().Clone();
                 var prompts = encoderResults.First(r => r.Name == "prompts").AsTensor<long>().Clone();
 
+                // --- DirectML 设备 KV 快路径（同非流式：失败即回退经典路径）---
+                // 注意：若已经向调用方发出过音频块，则不能安全重跑，必须直接失败而不是重复输出。
+                if (TryGetDeviceKvLoop(out var deviceLoopTok))
+                {
+                    bool emittedAnyChunk = false;
+                    Action<long[], bool> trackingCallback = (tokens, isFinal) =>
+                    {
+                        emittedAnyChunk = true;
+                        onTokenChunk(tokens, isFinal);
+                    };
+
+                    try
+                    {
+                        RunT2SStreamingTokensDeviceKv(deviceLoopTok, x, prompts, chunkSize, trackingCallback, onRetry, textSeq, languageTags, options);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        DisableDeviceKv("设备 KV 流式解码执行失败", ex);
+                        if (emittedAnyChunk)
+                        {
+                            // 已产生输出，重跑会造成重复音频；交由上层感知失败。
+                            throw;
+                        }
+                    }
+                }
+
                 // 动态阈值：使用语种感知的乘数
                 int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
                 int maxRetries = options.MaxRetries!.Value;
@@ -776,19 +909,19 @@ namespace AstraTTS.Core.Core
                     generatedTokens.Add(firstToken);
 
                     // Initialize KV Cache (No Clone, references memory in firstStageResults)
-                    var kvCache = new List<Tensor<float>>(48);
-                    for (int layer = 0; layer < 24; layer++)
+                    var kvCache = new Tensor<float>[KvLayerCount * 2];
+                    for (int layer = 0; layer < KvLayerCount; layer++)
                     {
-                        kvCache.Add(firstStageResults.First(r => r.Name == $"present_k_layer_{layer}").AsTensor<float>());
-                        kvCache.Add(firstStageResults.First(r => r.Name == $"present_v_layer_{layer}").AsTensor<float>());
+                        kvCache[layer * 2] = firstStageResults.First(r => r.Name == PresentKNames[layer]).AsTensor<float>();
+                        kvCache[layer * 2 + 1] = firstStageResults.First(r => r.Name == PresentVNames[layer]).AsTensor<float>();
                     }
 
                     var currentYTensor = yTensor;
                     var currentYEmbTensor = yEmbTensor;
-                    int numLayers = kvCache.Count / 2;
+                    int numLayers = KvLayerCount;
 
                     // 复用 List 避免每次分配
-                    var stageInputs = new List<NamedOnnxValue>(100);
+                    var stageInputs = new List<NamedOnnxValue>(2 + KvLayerCount * 2);
 
                     try
                     {
@@ -800,8 +933,8 @@ namespace AstraTTS.Core.Core
 
                             for (int layer = 0; layer < numLayers; layer++)
                             {
-                                stageInputs.Add(NamedOnnxValue.CreateFromTensor($"past_k_layer_{layer}", kvCache[layer * 2]));
-                                stageInputs.Add(NamedOnnxValue.CreateFromTensor($"past_v_layer_{layer}", kvCache[layer * 2 + 1]));
+                                stageInputs.Add(NamedOnnxValue.CreateFromTensor(PastKNames[layer], kvCache[layer * 2]));
+                                stageInputs.Add(NamedOnnxValue.CreateFromTensor(PastVNames[layer], kvCache[layer * 2 + 1]));
                             }
 
                             // Run Inference
@@ -819,11 +952,10 @@ namespace AstraTTS.Core.Core
                             var stopCondition = stageResults.First(r => r.Name == "stop_condition_tensor").AsTensor<bool>().GetValue(0);
 
                             // Update KV Cache pointers for next iteration
-                            kvCache.Clear();
                             for (int layer = 0; layer < numLayers; layer++)
                             {
-                                kvCache.Add(stageResults.First(r => r.Name == $"present_k_layer_{layer}").AsTensor<float>());
-                                kvCache.Add(stageResults.First(r => r.Name == $"present_v_layer_{layer}").AsTensor<float>());
+                                kvCache[layer * 2] = stageResults.First(r => r.Name == PresentKNames[layer]).AsTensor<float>();
+                                kvCache[layer * 2 + 1] = stageResults.First(r => r.Name == PresentVNames[layer]).AsTensor<float>();
                             }
 
                             // Safe access
@@ -877,6 +1009,195 @@ namespace AstraTTS.Core.Core
                 ReturnFlat(refBertFlat);
                 ReturnFlat(textBertFlat);
             }
+        }
+
+
+        /// <summary>
+        /// 尝试获取 DirectML 设备端 KV 解码循环。不可用时返回 false（调用方走经典路径）。
+        /// </summary>
+        private bool TryGetDeviceKvLoop(out DmlKvDecodeLoop loop)
+        {
+            loop = null!;
+            if (_config == null || !_config.UseDirectML || !_config.UseDeviceKvCache || _deviceKvDisabled)
+                return false;
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return false;
+            if (_firstStageDecoder == null || _stageDecoder == null)
+                return false;
+
+            lock (_deviceKvLock)
+            {
+                if (_deviceKvDisabled) return false;
+                if (_deviceKvLoop != null) { loop = _deviceKvLoop; return true; }
+                try
+                {
+                    _deviceKvLoop = new DmlKvDecodeLoop(_firstStageDecoder, _stageDecoder, _config.DirectMLDeviceId, DebugMode);
+                    loop = _deviceKvLoop;
+                    if (DebugMode) DebugLog("[DirectML] 设备端 KV 解码已启用（K/V 与 y_emb 常驻显存）");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _deviceKvDisabled = true;
+                    Console.WriteLine($"⚠️ [DirectML] 设备 KV 初始化失败，回退经典路径: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 设备 KV 路径出错时停用（本进程内不再尝试），由调用方继续经典路径。
+        /// </summary>
+        private void DisableDeviceKv(string reason, Exception ex)
+        {
+            lock (_deviceKvLock)
+            {
+                _deviceKvDisabled = true;
+            }
+            Console.WriteLine($"⚠️ [DirectML] {reason}，已回退经典路径: {ex.Message}");
+        }
+
+        /// <summary>
+        /// 非流式 T2S 的设备 KV 解码（与经典路径的重试/阈值/EOS 语义一致）。
+        /// </summary>
+        private long[] RunT2SDecodeDeviceKv(DmlKvDecodeLoop loop, Tensor<float> x, Tensor<long> prompts,
+            long[] textSeq, PhoneLanguage[]? languageTags, TtsOptions options)
+        {
+            float[] xFlat = x.ToArray();
+            long[] xShape = x.Dimensions.ToArray().Select(d => (long)d).ToArray();
+            long[] promptsArr = prompts.ToArray();
+
+            int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
+            const int maxRetries = 10;
+            int retryCount = 0;
+            bool success = false;
+            var generatedTokens = new List<long>();
+
+            while (retryCount < maxRetries)
+            {
+                generatedTokens.Clear();
+                try
+                {
+                    long firstToken = loop.Begin(xFlat, xShape, promptsArr);
+                    generatedTokens.Add(firstToken);
+
+                    for (int i = 0; i < 500; i++)
+                    {
+                        loop.RunStep(out long lastToken, out bool stopCondition);
+                        generatedTokens.Add(lastToken);
+                        if (stopCondition) break;
+                    }
+                }
+                finally
+                {
+                    loop.EndAttempt();
+                }
+
+                if (generatedTokens.Count >= minExpectedTokens)
+                {
+                    success = true;
+                    break;
+                }
+
+                retryCount++;
+                if (DebugMode) DebugLog($"[T2S][DirectML] Insufficient tokens ({generatedTokens.Count} < {minExpectedTokens}). Retrying {retryCount}/{maxRetries}...");
+            }
+
+            if (!success)
+                throw new Exception($"T2S 推理失败：在 {maxRetries} 次重试后仍未能生成有效的语义序列。请检查模型状态。");
+
+            // 与经典路径一致：剔除 EOS 并把最后一个 token 置 0
+            var eosIndex = generatedTokens.FindIndex(t => t >= 1024);
+            long[] finalSemantic = (eosIndex >= 0)
+                ? generatedTokens.Take(eosIndex).ToArray()
+                : generatedTokens.ToArray();
+            if (finalSemantic.Length > 0) finalSemantic[finalSemantic.Length - 1] = 0;
+            return finalSemantic;
+        }
+
+        /// <summary>
+        /// Web 流式 T2S 的设备 KV 解码（与经典路径的分块回调/重试语义一致）。
+        /// </summary>
+        private void RunT2SStreamingTokensDeviceKv(DmlKvDecodeLoop loop, Tensor<float> x, Tensor<long> prompts,
+            int chunkSize, Action<long[], bool> onTokenChunk, Action? onRetry,
+            long[] textSeq, PhoneLanguage[]? languageTags, TtsOptions options)
+        {
+            float[] xFlat = x.ToArray();
+            long[] xShape = x.Dimensions.ToArray().Select(d => (long)d).ToArray();
+            long[] promptsArr = prompts.ToArray();
+
+            int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
+            int maxRetries = options.MaxRetries!.Value;
+            int retryCount = 0;
+            bool success = false;
+
+            while (retryCount < maxRetries)
+            {
+                if (retryCount > 0)
+                {
+                    onRetry?.Invoke();
+                    if (DebugMode) DebugLog($"[T2S Streaming][DirectML] Retry {retryCount}/{maxRetries}, clearing previous tokens...");
+                }
+
+                var generatedTokens = new List<long>();
+                int lastEmitPosition = 0;
+
+                try
+                {
+                    long firstToken = loop.Begin(xFlat, xShape, promptsArr);
+                    if (firstToken >= 1024)
+                    {
+                        retryCount++;
+                        if (DebugMode) DebugLog($"[Streaming][DirectML] First Stage output EOS directly, retrying {retryCount}/{maxRetries}...");
+                        continue;
+                    }
+                    generatedTokens.Add(firstToken);
+
+                    for (int i = 0; i < 500; i++)
+                    {
+                        loop.RunStep(out long lastToken, out bool stopCondition);
+                        generatedTokens.Add(lastToken);
+
+                        int currentCount = generatedTokens.Count;
+                        bool shouldEmit = (currentCount - lastEmitPosition) >= chunkSize;
+                        bool isEOS = stopCondition || lastToken >= 1024;
+
+                        if (shouldEmit || isEOS)
+                        {
+                            int tokenLen = 0;
+                            while (tokenLen < generatedTokens.Count && generatedTokens[tokenLen] < 1024) tokenLen++;
+
+                            if (tokenLen > 0)
+                            {
+                                long[] tokens = new long[tokenLen];
+                                for (int k = 0; k < tokenLen; k++) tokens[k] = generatedTokens[k];
+
+                                if (isEOS) tokens[tokens.Length - 1] = 0;
+                                onTokenChunk(tokens, isEOS);
+                                lastEmitPosition = currentCount;
+                            }
+                        }
+
+                        if (isEOS) break;
+                    }
+                }
+                finally
+                {
+                    loop.EndAttempt();
+                }
+
+                if (generatedTokens.Count >= minExpectedTokens)
+                {
+                    success = true;
+                    break;
+                }
+
+                if (DebugMode) DebugLog($"[T2S Streaming][DirectML] Incomplete generation ({generatedTokens.Count} < {minExpectedTokens}), retrying...");
+                retryCount++;
+            }
+
+            if (!success)
+                throw new Exception($"流式 T2S 推理失败：{options.MaxRetries} 次重试后仍未达到期望 tokens 数量 ({minExpectedTokens})");
         }
 
 
@@ -972,6 +1293,12 @@ namespace AstraTTS.Core.Core
         public void Dispose()
         {
             if (IsShared) return;
+
+            lock (_deviceKvLock)
+            {
+                _deviceKvLoop?.Dispose();
+                _deviceKvLoop = null;
+            }
 
             _t2sEncoder?.Dispose();
             _firstStageDecoder?.Dispose();

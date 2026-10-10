@@ -217,6 +217,26 @@ namespace AstraTTS.Core.Config
         public bool UseDirectML { get; set; } = false;
 
         /// <summary>
+        /// DirectML 设备编号（0 = 默认适配器）。
+        /// 多显卡机器可指定其他编号以选择独显。
+        /// </summary>
+        public int DirectMLDeviceId { get; set; } = 0;
+
+        /// <summary>
+        /// 是否启用 DirectML 设备端 KV 缓存（仅在 UseDirectML=true 且 Windows 下生效）。
+        /// 开启后解码阶段的 K/V 与 y_emb 常驻显存，避免每 token 复制 48 个张量回主机内存；
+        /// 设备路径出错时自动回退经典路径，不影响可用性。默认 true。
+        /// </summary>
+        public bool UseDeviceKvCache { get; set; } = true;
+
+        /// <summary>
+        /// 混合模式：仅声码器 (vits) 使用 DirectML GPU，其余模型保持 CPU（仅 Windows + V1 引擎生效）。
+        /// 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立。
+        /// 声码器 DML 加载失败时自动回退 CPU，不影响可用性。默认 false。
+        /// </summary>
+        public bool UseVocoderDirectML { get; set; } = false;
+
+        /// <summary>
         /// 是否启用 CoreML 加速（仅 macOS 有效）。
         /// 默认关闭：实测对 GPT-SoVITS 这类带循环控制流的模型，CoreML 子图切分反而比纯 CPU 慢，
         /// 且首次加载需 ANE 编译耗时数十秒。仅在你确认自己的模型受益时开启。
@@ -295,6 +315,14 @@ namespace AstraTTS.Core.Config
         public int StreamingChunkSize { get; set; } = 22;
         public int StreamingPreBufferChunks { get; set; } = 2;
         public bool StreamingMode { get; set; } = true;
+
+        /// <summary>
+        /// 流式声码器重触发阈值的增长因子（默认 1.5）。
+        /// 声码器每次调用都会对"累计全部 token"重算，单句总计算量约为最终长度的
+        /// Σmin(factor^k·chunk, L)/L + 1 倍。提高该因子可显著减少重算总量（降低长文本
+        /// 的 CPU/GPU 压力），代价是音频分块延迟变大。取值范围 [1.2, 4.0]。
+        /// </summary>
+        public float VocoderRetriggerFactor { get; set; } = 1.5f;
 
         // ============================================================
         // 音频后端

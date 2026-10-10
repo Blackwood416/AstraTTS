@@ -93,7 +93,12 @@ namespace AstraTTS.Core.Core
 
             _englishG2p.DebugMode = config.DebugMode;
             if (_japaneseG2p != null) _japaneseG2p.DebugMode = config.DebugMode;
-            if (_bert != null) _bert.DebugMode = config.DebugMode;
+            if (_bert != null)
+            {
+                _bert.DebugMode = config.DebugMode;
+                // DirectML 同 Session 禁止并发 Run：流式多句预取会并发调用同一 BERT。
+                _bert.SerializeInference = config.UseDirectML && !config.UseEngineV2;
+            }
 
             _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p, _config.G2P.Languages);
             _mixedG2p.DebugMode = config.DebugMode;
@@ -472,8 +477,9 @@ namespace AstraTTS.Core.Core
                                     if (isFinal || tokens.Length >= nextVocoderThreshold)
                                     {
                                         tokenQueue.Enqueue((tokens, isFinal));
-                                        // 阈值增长 1.5x（比 2x 更平滑）
-                                        nextVocoderThreshold = Math.Max((int)(nextVocoderThreshold * 1.5), tokens.Length + options.StreamingChunkSize);
+                                        // 阈值按配置因子增长（默认 1.5x）；因子越大重算总量越少、分块延迟越大
+                                        float factor = options.VocoderRetriggerFactor > 1.05f ? options.VocoderRetriggerFactor : 1.5f;
+                                        nextVocoderThreshold = Math.Max((int)(nextVocoderThreshold * factor), tokens.Length + options.StreamingChunkSize);
                                     }
                                 },
                                  onRetry: () =>

@@ -52,6 +52,12 @@ const Config = {
         if (form.PoolCapacity) form.PoolCapacity.value = App.getProp(c, 'poolCapacity') ?? 1;
         if (form.ReuseMemory) form.ReuseMemory.checked = App.getProp(c, 'reuseMemory') ?? true;
 
+        // --- Hardware acceleration (Windows DirectML) ---
+        if (form.UseDirectML) form.UseDirectML.checked = !!App.getProp(c, 'useDirectML');
+        if (form.DirectMLDeviceId) form.DirectMLDeviceId.value = App.getProp(c, 'directMLDeviceId') ?? 0;
+        if (form.UseDeviceKvCache) form.UseDeviceKvCache.checked = App.getProp(c, 'useDeviceKvCache') ?? true;
+        if (form.UseVocoderDirectML) form.UseVocoderDirectML.checked = !!App.getProp(c, 'useVocoderDirectML');
+
         // --- Synthesis Defaults ---
         if (form.Speed) form.Speed.value = App.getProp(c, 'speed') ?? 1.0;
         if (form.NoiseScale) form.NoiseScale.value = App.getProp(c, 'noiseScale') ?? 0.35;
@@ -112,6 +118,12 @@ const Config = {
         cfg.PoolCapacity = parseInt(form.PoolCapacity?.value || 1);
         cfg.ReuseMemory = form.ReuseMemory?.checked ?? true;
         cfg.DebugMode = form.DebugMode?.checked ?? false;
+
+        // Hardware acceleration (Windows DirectML)
+        cfg.UseDirectML = form.UseDirectML?.checked ?? false;
+        cfg.DirectMLDeviceId = parseInt(form.DirectMLDeviceId?.value || 0);
+        cfg.UseDeviceKvCache = form.UseDeviceKvCache?.checked ?? true;
+        cfg.UseVocoderDirectML = form.UseVocoderDirectML?.checked ?? false;
 
         // Synthesis defaults
         cfg.Speed = parseFloat(form.Speed?.value || 1.0);

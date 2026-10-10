@@ -93,7 +93,12 @@ namespace AstraTTS.Core.Core
 
             _englishG2p.DebugMode = config.DebugMode;
             if (_japaneseG2p != null) _japaneseG2p.DebugMode = config.DebugMode;
-            if (_bert != null) _bert.DebugMode = config.DebugMode;
+            if (_bert != null)
+            {
+                _bert.DebugMode = config.DebugMode;
+                // DirectML 同 Session 禁止并发 Run。
+                _bert.SerializeInference = config.UseDirectML;
+            }
 
             _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p, _config.G2P.Languages);
             _mixedG2p.DebugMode = config.DebugMode;

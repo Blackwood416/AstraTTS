@@ -139,6 +139,7 @@ namespace AstraTTS.Core.Core
                 Temperature = _config.Temperature,
                 TopK = _config.TopK,
                 StreamingChunkSize = _config.StreamingChunkSize,
+                VocoderRetriggerFactor = _config.VocoderRetriggerFactor,
                 Languages = _config.G2P.Languages != null ? new List<string>(_config.G2P.Languages) : null
             };
         }
