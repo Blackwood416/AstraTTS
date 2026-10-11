@@ -91,13 +91,7 @@ namespace AstraTTS.Core.Core
             // mac 调度延迟较大，开启 spinning 反而能降低延迟
             options.AddSessionConfigEntry("session.intra_op.allow_spinning", isMac ? "1" : "0");
 
-            if (config.UseDirectML && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-            {
-                options.EnableMemoryPattern = false;
-                options.AppendExecutionProvider_DML(0);
-                DebugLog("DirectML 加速已启用");
-            }
-            else if (isMac && config.UseCoreML)
+            if (isMac && config.UseCoreML)
             {
                 options.EnableMemoryPattern = false;
                 try
@@ -120,8 +114,6 @@ namespace AstraTTS.Core.Core
             }
             else
             {
-                if (config.UseDirectML)
-                    DebugLog("DirectML 仅在 Windows 上可用，当前环境将回退至 CPU");
                 options.EnableMemoryPattern = true;
             }
 

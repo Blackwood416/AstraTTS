@@ -227,38 +227,14 @@ namespace AstraTTS.Core.Config
         public bool UseEngineV2 { get; set; } = false;
 
         // ============================================================
-        // 硬件加速
+        // 硬件加速（GPU 由 ggml 插件 EP 提供：Windows/Linux=Vulkan，macOS=Metal）
         // ============================================================
-
-        public bool UseDirectML { get; set; } = false;
-
-        /// <summary>
-        /// DirectML 设备编号（0 = 默认适配器）。
-        /// 多显卡机器可指定其他编号以选择独显。
-        /// </summary>
-        public int DirectMLDeviceId { get; set; } = 0;
-
-        /// <summary>
-        /// 是否启用 DirectML 设备端 KV 缓存（仅在 UseDirectML=true 且 Windows 下生效）。
-        /// 开启后解码阶段的 K/V 与 y_emb 常驻显存，避免每 token 复制 48 个张量回主机内存；
-        /// 设备路径出错时自动回退经典路径，不影响可用性。默认 true。
-        /// </summary>
-        public bool UseDeviceKvCache { get; set; } = true;
-
-        /// <summary>
-        /// 混合模式：仅声码器 (vits) 使用 DirectML GPU，其余模型保持 CPU（仅 Windows + V1 引擎生效）。
-        /// 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立。
-        /// 声码器 DML 加载失败时自动回退 CPU，不影响可用性。默认 false。
-        /// 注意：本项目 ORT 升级到 1.30（ggml 所需）后构建不再包含 DML，此项会静默回退；
-        /// 声码器 GPU 加速请改用 UseVocoderGgml。
-        /// </summary>
-        public bool UseVocoderDirectML { get; set; } = false;
 
         /// <summary>
         /// 混合模式：仅声码器 (vits) 使用 ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal），
         /// 其余模型保持 CPU。实测 vits 在 Vulkan 上比 CPU 快约 5 倍（AMD RX 5500 XT），
         /// 流式整链路约 2×、非流式约 25%。需 ORT 1.29+ 与 onnxruntime_ggml 运行库；
-        /// 库缺失或加载失败时自动回退 CPU，不影响可用性。与 UseVocoderDirectML 同时开启时本项优先。默认 false。
+        /// 库缺失或加载失败时自动回退 CPU，不影响可用性。默认 false。
         /// </summary>
         public bool UseVocoderGgml { get; set; } = false;
 

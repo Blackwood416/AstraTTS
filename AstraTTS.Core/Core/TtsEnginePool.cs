@@ -42,13 +42,13 @@ namespace AstraTTS.Core.Core
             int extraCount = _config.PoolCapacity - 1;
             if (extraCount > 0)
             {
-                // DirectML 要求同一 Session 不得并发 Run；共享 Session 的多实例会违反该约束。
-                // 因此在 DML（含 V1 混合模式的声码器）下强制独立加载各实例的模型。
-                bool usesDmlSession = _config.UseDirectML || (_config.UseVocoderDirectML && !_config.UseEngineV2);
-                bool shareAllowed = _config.ReuseMemory && !usesDmlSession;
-                if (_config.ReuseMemory && usesDmlSession)
+                // 共享 Session 的多实例无法安全并发（会话内部状态不可重入），
+                // 因此使用 ggml 混合模式（其声码器会话运行在 GPU EP 上）时强制独立加载。
+                bool usesGpuSession = _config.UseVocoderGgml && !_config.UseEngineV2;
+                bool shareAllowed = _config.ReuseMemory && !usesGpuSession;
+                if (_config.ReuseMemory && usesGpuSession)
                 {
-                    Console.WriteLine("[TtsEnginePool] DirectML Session 不支持共享（同会话禁止并发 Run），已自动改为独立加载。");
+                    Console.WriteLine("[TtsEnginePool] ggml 混合模式不支持共享 Session（会话不可并发），已自动改为独立加载。");
                 }
 
                 for (int i = 0; i < extraCount; i++)

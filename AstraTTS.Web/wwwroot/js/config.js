@@ -52,11 +52,7 @@ const Config = {
         if (form.PoolCapacity) form.PoolCapacity.value = App.getProp(c, 'poolCapacity') ?? 1;
         if (form.ReuseMemory) form.ReuseMemory.checked = App.getProp(c, 'reuseMemory') ?? true;
 
-        // --- Hardware acceleration (Windows DirectML) ---
-        if (form.UseDirectML) form.UseDirectML.checked = !!App.getProp(c, 'useDirectML');
-        if (form.DirectMLDeviceId) form.DirectMLDeviceId.value = App.getProp(c, 'directMLDeviceId') ?? 0;
-        if (form.UseDeviceKvCache) form.UseDeviceKvCache.checked = App.getProp(c, 'useDeviceKvCache') ?? true;
-        if (form.UseVocoderDirectML) form.UseVocoderDirectML.checked = !!App.getProp(c, 'useVocoderDirectML');
+        // --- Hardware acceleration (GPU via ggml plugin EP: Vulkan/Metal) ---
         if (form.UseVocoderGgml) form.UseVocoderGgml.checked = !!App.getProp(c, 'useVocoderGgml');
         if (form.UseBertCache) form.UseBertCache.checked = App.getProp(c, 'useBertCache') ?? true;
         if (form.UseBertNoLoopModel) form.UseBertNoLoopModel.checked = !!App.getProp(c, 'useBertNoLoopModel');
@@ -122,11 +118,7 @@ const Config = {
         cfg.ReuseMemory = form.ReuseMemory?.checked ?? true;
         cfg.DebugMode = form.DebugMode?.checked ?? false;
 
-        // Hardware acceleration (Windows DirectML)
-        cfg.UseDirectML = form.UseDirectML?.checked ?? false;
-        cfg.DirectMLDeviceId = parseInt(form.DirectMLDeviceId?.value || 0);
-        cfg.UseDeviceKvCache = form.UseDeviceKvCache?.checked ?? true;
-        cfg.UseVocoderDirectML = form.UseVocoderDirectML?.checked ?? false;
+        // Hardware acceleration (GPU via ggml plugin EP: Vulkan/Metal)
         cfg.UseVocoderGgml = form.UseVocoderGgml?.checked ?? false;
         cfg.UseBertCache = form.UseBertCache?.checked ?? true;
         cfg.UseBertNoLoopModel = form.UseBertNoLoopModel?.checked ?? false;

@@ -221,20 +221,7 @@
                                 <label><input type="checkbox" name="ReuseMemory"> 开启内存/Session 复用</label>
                             </div>
                             <div class="field checkbox-field">
-                                <label><input type="checkbox" name="UseDirectML"> 启用 DirectML GPU 加速 (仅 Windows)</label>
-                            </div>
-                            <div class="field checkbox-field">
-                                <label><input type="checkbox" name="UseVocoderDirectML"> 混合模式：仅声码器使用 GPU (其余 CPU，仅 Windows)</label>
-                            </div>
-                            <div class="field checkbox-field">
-                                <label><input type="checkbox" name="UseVocoderGgml"> 混合模式：声码器用 Vulkan/Metal (ggml，比 DirectML 更快)</label>
-                            </div>
-                            <div class="field">
-                                <label>DirectML 设备编号 (0 = 默认显卡)</label>
-                                <input type="number" name="DirectMLDeviceId" min="0" max="16">
-                            </div>
-                            <div class="field checkbox-field">
-                                <label><input type="checkbox" name="UseDeviceKvCache"> 设备端 KV 缓存 (K/V 常驻显存)</label>
+                                <label><input type="checkbox" name="UseVocoderGgml"> 混合模式：声码器用 GPU (Vulkan/Metal，其余 CPU)</label>
                             </div>
                             <div class="field checkbox-field">
                                 <label><input type="checkbox" name="UseBertCache"> BERT 特征缓存 (同文本复用，省约 300ms/句)</label>

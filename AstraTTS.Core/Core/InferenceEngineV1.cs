@@ -27,11 +27,6 @@ namespace AstraTTS.Core.Core
         private InferenceSession? _stageDecoder;
         private InferenceSession? _vocoder;
 
-        // DirectML 设备端 KV 解码循环（惰性创建；失败后本进程内停用）。
-        private DmlKvDecodeLoop? _deviceKvLoop;
-        private bool _deviceKvDisabled;
-        private readonly object _deviceKvLock = new object();
-
         // 解码循环名称与索引缓存：避免每 token 的 LINQ 按名查找与字符串插值。
         private const int KvLayerCount = 24;
         private static readonly string[] PastKNames = BuildLayerNames("past_k_layer_");
@@ -60,23 +55,6 @@ namespace AstraTTS.Core.Core
         /// 创建 SessionOptions，可显式控制是否启用 CoreML（用于失败回退）。
         /// </summary>
         public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config, bool useCoreML)
-        {
-            return GetSessionOptions(config, useCoreML, forceCpu: false);
-        }
-
-        /// <summary>
-        /// 创建 SessionOptions。
-        /// </summary>
-        /// <param name="config">全局配置。</param>
-        /// <param name="useCoreML">是否允许 CoreML（仅 macOS）。</param>
-        /// <param name="forceCpu">
-        /// 强制纯 CPU：用于 DirectML 不兼容的模型。已实测 prompt_encoder 在 DML 上
-        /// 会话初始化即访问违例（进程级崩溃，无法捕获），必须留在 CPU。
-        /// </param>
-        /// <param name="forceDml">
-        /// 强制启用 DirectML（即使 config.UseDirectML=false）。用于混合模式的声码器加载。
-        /// </param>
-        public SessionOptions GetSessionOptions(AstraTTS.Core.Config.TTSConfig config, bool useCoreML, bool forceCpu, bool forceDml = false)
         {
             var sessionOptions = new SessionOptions();
 
@@ -109,29 +87,9 @@ namespace AstraTTS.Core.Core
                 "session.intra_op.allow_spinning",
                 isMac ? "1" : "0");
 
-            // 6. DirectML
-            // 注意：ORT 1.29+ 官方包不再内置 DML（DirectML 包停更于 1.24.4）。
-            // 无 DML 构建上此调用会抛异常，捕获后回退 CPU/ggml，不影响可用性。
-            bool wantDml = !forceCpu && (config.UseDirectML || forceDml);
-            if (wantDml && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                try
-                {
-                    sessionOptions.EnableMemoryPattern = false;
-                    sessionOptions.AppendExecutionProvider_DML(config.DirectMLDeviceId);
-                    DebugLog($"DirectML 加速已启用 (Windows, device={config.DirectMLDeviceId}{(forceDml && !config.UseDirectML ? ", 混合模式声码器" : "")})");
-                }
-                catch (Exception ex)
-                {
-                    DebugLog($"⚠️ DirectML 在此 ORT 构建中不可用（{ex.GetType().Name}），回退 CPU。如需 GPU 请启用 UseVocoderGgml（Vulkan/Metal）。");
-                }
-            }
-            else if (wantDml)
-            {
-                DebugLog("DirectML 仅在 Windows 上可用，当前平台已忽略该配置。");
-            }
-
-            // 7. CoreML (仅 macOS, 且启用)
+            // 6. CoreML (仅 macOS, 且启用)
+            //    GPU 加速（Windows/Linux=Vulkan、macOS=Metal）由 ggml 插件 EP 提供，
+            //    见 GgmlExecutionProvider 与 LoadVocoderWithFallback。
             if (isMac && useCoreML)
             {
                 try
@@ -162,17 +120,6 @@ namespace AstraTTS.Core.Core
         /// </summary>
         private InferenceSession LoadModelWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
         {
-            return LoadModelWithFallback(modelPath, config, forceCpu: false);
-        }
-
-        private InferenceSession LoadModelWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config, bool forceCpu)
-        {
-            if (forceCpu)
-            {
-                DebugLog($"[CPU] 模型 '{Path.GetFileName(modelPath)}' 使用纯 CPU（DirectML 不兼容）。");
-                return new InferenceSession(modelPath, GetSessionOptions(config, config.UseCoreML, forceCpu: true));
-            }
-
             bool isMac = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
             // 如果 mac 且启用 CoreML，先尝试 CoreML，失败再回退 CPU
             if (isMac && config.UseCoreML)
@@ -192,12 +139,12 @@ namespace AstraTTS.Core.Core
         }
 
         /// <summary>
-        /// 加载声码器。混合模式（UseVocoderGgml / UseVocoderDirectML）下仅声码器使用 GPU，
+        /// 加载声码器。混合模式（UseVocoderGgml）下仅声码器使用 GPU，
         /// 加载失败自动回退 CPU，不影响可用性。
         /// </summary>
         private InferenceSession LoadVocoderWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
         {
-            // 1) ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal）——实测内核 5×，优先尝试。
+            // ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal）——实测内核 5×，优先尝试。
             if (config.UseVocoderGgml)
             {
                 try
@@ -212,27 +159,11 @@ namespace AstraTTS.Core.Core
                             return session;
                         }
                     }
-                    Console.WriteLine("⚠️ [混合模式] ggml EP 不可用（库缺失或 Vulkan 不可用），尝试 DirectML/CPU。");
+                    Console.WriteLine("⚠️ [混合模式] ggml EP 不可用（库缺失或 Vulkan 不可用），回退 CPU。");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ [混合模式] 声码器 ggml 加载失败，回退: {ex.Message}");
-                }
-            }
-
-            // 2) DirectML 混合（仅在 ORT 构建包含 DML 时可用；本项目 ORT 1.30 无 DML，会走下方回退）。
-            if (config.UseVocoderDirectML && !config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                try
-                {
-                    var session = new InferenceSession(modelPath,
-                        GetSessionOptions(config, config.UseCoreML, forceCpu: false, forceDml: true));
-                    DebugLog("[CPU+GPU 混合] 声码器已使用 DirectML（其余模型保持在 CPU）");
-                    return session;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"⚠️ [混合模式] 声码器 DirectML 加载失败，回退 CPU: {ex.Message}");
+                    Console.WriteLine($"⚠️ [混合模式] 声码器 ggml 加载失败，回退 CPU: {ex.Message}");
                 }
             }
             return LoadModelWithFallback(modelPath, config);
@@ -297,9 +228,7 @@ namespace AstraTTS.Core.Core
                     string promptEncoderPath = Path.Combine(modelDir, "prompt_encoder.onnx");
                     if (File.Exists(promptEncoderPath))
                     {
-                        // prompt_encoder 在 DirectML 上会话初始化即原生崩溃（实测访问违例，无法 try/catch），
-                        // 且其 ReduceSum 也报 E_INVALIDARG；固定使用 CPU。
-                        _promptEncoder = LoadModelWithFallback(promptEncoderPath, config, forceCpu: config.UseDirectML);
+                        _promptEncoder = LoadModelWithFallback(promptEncoderPath, config);
                     }
                 },
                 () =>
@@ -488,21 +417,6 @@ namespace AstraTTS.Core.Core
                 // 3. 全局重试循环 (包含 First Stage 和 Stage Decoder)
                 // 原因：First Stage Decoder 输出也是非确定性的（包含随机采样）， sometimes producing "bad" state that causes Stage Decoder to fail immediately.
                 // 因此必须重试整个解码过程。
-
-                // --- DirectML 设备 KV 快路径 ---
-                // 若可用，K/V 与 y_emb 直接在显存中流转，避免每 token 往返主机内存。
-                // 任何异常都会停用该路径并回退到经典实现，保证输出一致性。
-                if (TryGetDeviceKvLoop(out var deviceLoop))
-                {
-                    try
-                    {
-                        return RunT2SDecodeDeviceKv(deviceLoop, x, prompts, textSeq, languageTags, options);
-                    }
-                    catch (Exception ex)
-                    {
-                        DisableDeviceKv("设备 KV 解码执行失败", ex);
-                    }
-                }
 
                 // 动态阈值：使用语种感知的乘数
                 int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
@@ -866,33 +780,6 @@ namespace AstraTTS.Core.Core
                 var x = encoderResults.First(r => r.Name == "x").AsTensor<float>().Clone();
                 var prompts = encoderResults.First(r => r.Name == "prompts").AsTensor<long>().Clone();
 
-                // --- DirectML 设备 KV 快路径（同非流式：失败即回退经典路径）---
-                // 注意：若已经向调用方发出过音频块，则不能安全重跑，必须直接失败而不是重复输出。
-                if (TryGetDeviceKvLoop(out var deviceLoopTok))
-                {
-                    bool emittedAnyChunk = false;
-                    Action<long[], bool> trackingCallback = (tokens, isFinal) =>
-                    {
-                        emittedAnyChunk = true;
-                        onTokenChunk(tokens, isFinal);
-                    };
-
-                    try
-                    {
-                        RunT2SStreamingTokensDeviceKv(deviceLoopTok, x, prompts, chunkSize, trackingCallback, onRetry, textSeq, languageTags, options);
-                        return;
-                    }
-                    catch (Exception ex)
-                    {
-                        DisableDeviceKv("设备 KV 流式解码执行失败", ex);
-                        if (emittedAnyChunk)
-                        {
-                            // 已产生输出，重跑会造成重复音频；交由上层感知失败。
-                            throw;
-                        }
-                    }
-                }
-
                 // 动态阈值：使用语种感知的乘数
                 int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
                 int maxRetries = options.MaxRetries!.Value;
@@ -1045,195 +932,6 @@ namespace AstraTTS.Core.Core
         }
 
 
-        /// <summary>
-        /// 尝试获取 DirectML 设备端 KV 解码循环。不可用时返回 false（调用方走经典路径）。
-        /// </summary>
-        private bool TryGetDeviceKvLoop(out DmlKvDecodeLoop loop)
-        {
-            loop = null!;
-            if (_config == null || !_config.UseDirectML || !_config.UseDeviceKvCache || _deviceKvDisabled)
-                return false;
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                return false;
-            if (_firstStageDecoder == null || _stageDecoder == null)
-                return false;
-
-            lock (_deviceKvLock)
-            {
-                if (_deviceKvDisabled) return false;
-                if (_deviceKvLoop != null) { loop = _deviceKvLoop; return true; }
-                try
-                {
-                    _deviceKvLoop = new DmlKvDecodeLoop(_firstStageDecoder, _stageDecoder, _config.DirectMLDeviceId, DebugMode);
-                    loop = _deviceKvLoop;
-                    if (DebugMode) DebugLog("[DirectML] 设备端 KV 解码已启用（K/V 与 y_emb 常驻显存）");
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    _deviceKvDisabled = true;
-                    Console.WriteLine($"⚠️ [DirectML] 设备 KV 初始化失败，回退经典路径: {ex.Message}");
-                    return false;
-                }
-            }
-        }
-
-        /// <summary>
-        /// 设备 KV 路径出错时停用（本进程内不再尝试），由调用方继续经典路径。
-        /// </summary>
-        private void DisableDeviceKv(string reason, Exception ex)
-        {
-            lock (_deviceKvLock)
-            {
-                _deviceKvDisabled = true;
-            }
-            Console.WriteLine($"⚠️ [DirectML] {reason}，已回退经典路径: {ex.Message}");
-        }
-
-        /// <summary>
-        /// 非流式 T2S 的设备 KV 解码（与经典路径的重试/阈值/EOS 语义一致）。
-        /// </summary>
-        private long[] RunT2SDecodeDeviceKv(DmlKvDecodeLoop loop, Tensor<float> x, Tensor<long> prompts,
-            long[] textSeq, PhoneLanguage[]? languageTags, TtsOptions options)
-        {
-            float[] xFlat = x.ToArray();
-            long[] xShape = x.Dimensions.ToArray().Select(d => (long)d).ToArray();
-            long[] promptsArr = prompts.ToArray();
-
-            int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
-            const int maxRetries = 10;
-            int retryCount = 0;
-            bool success = false;
-            var generatedTokens = new List<long>();
-
-            while (retryCount < maxRetries)
-            {
-                generatedTokens.Clear();
-                try
-                {
-                    long firstToken = loop.Begin(xFlat, xShape, promptsArr);
-                    generatedTokens.Add(firstToken);
-
-                    for (int i = 0; i < 500; i++)
-                    {
-                        loop.RunStep(out long lastToken, out bool stopCondition);
-                        generatedTokens.Add(lastToken);
-                        if (stopCondition) break;
-                    }
-                }
-                finally
-                {
-                    loop.EndAttempt();
-                }
-
-                if (generatedTokens.Count >= minExpectedTokens)
-                {
-                    success = true;
-                    break;
-                }
-
-                retryCount++;
-                if (DebugMode) DebugLog($"[T2S][DirectML] Insufficient tokens ({generatedTokens.Count} < {minExpectedTokens}). Retrying {retryCount}/{maxRetries}...");
-            }
-
-            if (!success)
-                throw new Exception($"T2S 推理失败：在 {maxRetries} 次重试后仍未能生成有效的语义序列。请检查模型状态。");
-
-            // 与经典路径一致：剔除 EOS 并把最后一个 token 置 0
-            var eosIndex = generatedTokens.FindIndex(t => t >= 1024);
-            long[] finalSemantic = (eosIndex >= 0)
-                ? generatedTokens.Take(eosIndex).ToArray()
-                : generatedTokens.ToArray();
-            if (finalSemantic.Length > 0) finalSemantic[finalSemantic.Length - 1] = 0;
-            return finalSemantic;
-        }
-
-        /// <summary>
-        /// Web 流式 T2S 的设备 KV 解码（与经典路径的分块回调/重试语义一致）。
-        /// </summary>
-        private void RunT2SStreamingTokensDeviceKv(DmlKvDecodeLoop loop, Tensor<float> x, Tensor<long> prompts,
-            int chunkSize, Action<long[], bool> onTokenChunk, Action? onRetry,
-            long[] textSeq, PhoneLanguage[]? languageTags, TtsOptions options)
-        {
-            float[] xFlat = x.ToArray();
-            long[] xShape = x.Dimensions.ToArray().Select(d => (long)d).ToArray();
-            long[] promptsArr = prompts.ToArray();
-
-            int minExpectedTokens = CalculateMinExpectedTokens(textSeq, languageTags, options);
-            int maxRetries = options.MaxRetries!.Value;
-            int retryCount = 0;
-            bool success = false;
-
-            while (retryCount < maxRetries)
-            {
-                if (retryCount > 0)
-                {
-                    onRetry?.Invoke();
-                    if (DebugMode) DebugLog($"[T2S Streaming][DirectML] Retry {retryCount}/{maxRetries}, clearing previous tokens...");
-                }
-
-                var generatedTokens = new List<long>();
-                int lastEmitPosition = 0;
-
-                try
-                {
-                    long firstToken = loop.Begin(xFlat, xShape, promptsArr);
-                    if (firstToken >= 1024)
-                    {
-                        retryCount++;
-                        if (DebugMode) DebugLog($"[Streaming][DirectML] First Stage output EOS directly, retrying {retryCount}/{maxRetries}...");
-                        continue;
-                    }
-                    generatedTokens.Add(firstToken);
-
-                    for (int i = 0; i < 500; i++)
-                    {
-                        loop.RunStep(out long lastToken, out bool stopCondition);
-                        generatedTokens.Add(lastToken);
-
-                        int currentCount = generatedTokens.Count;
-                        bool shouldEmit = (currentCount - lastEmitPosition) >= chunkSize;
-                        bool isEOS = stopCondition || lastToken >= 1024;
-
-                        if (shouldEmit || isEOS)
-                        {
-                            int tokenLen = 0;
-                            while (tokenLen < generatedTokens.Count && generatedTokens[tokenLen] < 1024) tokenLen++;
-
-                            if (tokenLen > 0)
-                            {
-                                long[] tokens = new long[tokenLen];
-                                for (int k = 0; k < tokenLen; k++) tokens[k] = generatedTokens[k];
-
-                                if (isEOS) tokens[tokens.Length - 1] = 0;
-                                onTokenChunk(tokens, isEOS);
-                                lastEmitPosition = currentCount;
-                            }
-                        }
-
-                        if (isEOS) break;
-                    }
-                }
-                finally
-                {
-                    loop.EndAttempt();
-                }
-
-                if (generatedTokens.Count >= minExpectedTokens)
-                {
-                    success = true;
-                    break;
-                }
-
-                if (DebugMode) DebugLog($"[T2S Streaming][DirectML] Incomplete generation ({generatedTokens.Count} < {minExpectedTokens}), retrying...");
-                retryCount++;
-            }
-
-            if (!success)
-                throw new Exception($"流式 T2S 推理失败：{options.MaxRetries} 次重试后仍未达到期望 tokens 数量 ({minExpectedTokens})");
-        }
-
-
         public float[] RunVocoder(long[] textSeq, long[] predSemantic, float[] refAudio32k, out int audioLength, float[]? ge = null, float[]? geAdvanced = null, float speed = 1.0f)
         {
             if (_vocoder == null) throw new InvalidOperationException("Vocoder not loaded.");
@@ -1326,12 +1024,6 @@ namespace AstraTTS.Core.Core
         public void Dispose()
         {
             if (IsShared) return;
-
-            lock (_deviceKvLock)
-            {
-                _deviceKvLoop?.Dispose();
-                _deviceKvLoop = null;
-            }
 
             _t2sEncoder?.Dispose();
             _firstStageDecoder?.Dispose();

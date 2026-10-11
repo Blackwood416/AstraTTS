@@ -33,23 +33,11 @@ InterOpNumThreads: 0
 # GraphOptimizationLevel: 图优化级别 (0=禁用, 1=基础, 2=全部)。
 GraphOptimizationLevel: 1
 
-# --- 硬件加速 ---
-# UseDirectML: 仅 Windows 有效，启用 GPU 加速 (DirectX 12)
-UseDirectML: false
-# DirectMLDeviceId: DirectML 使用的适配器编号 (0 = 默认/主显卡)，多显卡机器可指定独显
-DirectMLDeviceId: 0
-# UseDeviceKvCache: 启用设备端 KV 缓存（仅 UseDirectML=true 时生效）
-# 开启后解码阶段的 K/V 与 y_emb 常驻显存，避免每 token 复制 48 个张量回主机内存；
-# 设备路径出错时会自动回退经典路径。默认 true。
-UseDeviceKvCache: true
-# UseVocoderDirectML: 混合模式，仅声码器 (vits) 使用 DirectML GPU，其余模型保持 CPU（仅 Windows）。
-# 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立（UseDirectML=true 时忽略）。
-# 声码器 DML 加载失败会自动回退 CPU。默认 false。
-UseVocoderDirectML: false
-# UseVocoderGgml: 混合模式，仅声码器 (vits) 使用 ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal），
-# 其余模型保持 CPU。实测 vits 在 Vulkan 上比 CPU 快约 5 倍（AMD RX 5500 XT），流式整链路约 2×。
-# 需 ORT 1.29+ 与 onnxruntime_ggml 运行库（随构建输出分发）；加载失败自动回退 CPU。默认 false。
-UseVocoderGgml: false
+# --- 硬件加速（GPU 由 ggml 插件 EP 提供：Windows/Linux=Vulkan，macOS=Metal）---
+# UseVocoderGgml: 混合模式，仅声码器 (vits) 使用 ggml GPU 插件，其余模型保持 CPU。
+# 实测（AMD RX 5500 XT）vits 比 CPU 快约 5 倍，流式整链路约 2×、非流式约 25%（RTF 0.77 -> 0.52）。
+# 需要支持 Vulkan 的显卡与驱动；库缺失或加载失败时自动回退 CPU，不影响可用性。推荐开启。
+UseVocoderGgml: true
 # UseBertCache: 启用 BERT 特征缓存。同一文本（含对齐）重复合成时直接复用结果，
 # 省去一次约 280–390 ms 的 BERT 前向；缓存随引擎实例存活、容量 256（FIFO 淘汰）。默认 true。
 UseBertCache: true

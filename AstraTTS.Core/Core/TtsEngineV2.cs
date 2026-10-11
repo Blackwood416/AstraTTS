@@ -96,8 +96,6 @@ namespace AstraTTS.Core.Core
             if (_bert != null)
             {
                 _bert.DebugMode = config.DebugMode;
-                // DirectML 同 Session 禁止并发 Run。
-                _bert.SerializeInference = config.UseDirectML;
             }
 
             _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p, _config.G2P.Languages);
