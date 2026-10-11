@@ -11,14 +11,23 @@
     <PackageReference Include="Google.Protobuf" Version="3.33.2" />
     <PackageReference Include="jieba.NET" Version="0.42.2" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.23.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.23.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+    <!-- DirectML 包停更于 1.24.4，与 ORT 1.29+ 不兼容；声码器 GPU 加速改用 ggml（Vulkan/Metal）插件 EP。 -->
+    <!-- <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.23.0" /> -->
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="NumSharp" Version="0.30.0" />
     <PackageReference Include="SharpOpenJTalk.Lang" Version="2.0.3" />
     <PackageReference Include="Tokenizers.HuggingFace" Version="2.21.4" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ggml 插件 EP（与 onnxruntime-ggml v0.2.0 发布包中同名文件一致），随构建输出分发。
+         运行时也可用环境变量 ASTRA_GGML_LIBRARY 指向其他位置的同名 DLL。 -->
+    <None Include="third_party/onnxruntime_ggml.dll" Condition="Exists('third_party/onnxruntime_ggml.dll') AND $([MSBuild]::IsOSPlatform('Windows'))">
+      <Link>onnxruntime_ggml.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 <!--
   <ItemGroup>

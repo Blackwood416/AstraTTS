@@ -46,6 +46,18 @@ UseDeviceKvCache: true
 # 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立（UseDirectML=true 时忽略）。
 # 声码器 DML 加载失败会自动回退 CPU。默认 false。
 UseVocoderDirectML: false
+# UseVocoderGgml: 混合模式，仅声码器 (vits) 使用 ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal），
+# 其余模型保持 CPU。实测 vits 在 Vulkan 上比 CPU 快约 5 倍（AMD RX 5500 XT），流式整链路约 2×。
+# 需 ORT 1.29+ 与 onnxruntime_ggml 运行库（随构建输出分发）；加载失败自动回退 CPU。默认 false。
+UseVocoderGgml: false
+# UseBertCache: 启用 BERT 特征缓存。同一文本（含对齐）重复合成时直接复用结果，
+# 省去一次约 280–390 ms 的 BERT 前向；缓存随引擎实例存活、容量 256（FIFO 淘汰）。默认 true。
+UseBertCache: true
+# UseBertNoLoopModel: 使用去 Loop 的 roberta 变体 (roberta_noloop.onnx)。
+# 该变体把导致约 278 ms CPU 控制流的 Loop 节点替换为等价向量化算子（repeat_interleave 的
+# CumSum+Gather 实现），CPU 与 GPU 后端均受益。文件不存在时自动回退原模型。
+# 默认 false：请先确认已用对比工具验证两者输出逐位一致后再开启。
+UseBertNoLoopModel: false
 # UseCoreML: 仅 macOS 有效。默认 false：实测对 GPT-SoVITS 模型 CoreML 反而比纯 CPU 慢
 # (因子图切分 + ANE/CPU 数据搬运开销)。仅在你的模型确实受益时再尝试开启。
 UseCoreML: false

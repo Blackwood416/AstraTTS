@@ -67,8 +67,8 @@ namespace AstraTTS.Core.Core
                     () => _engine.LoadModels(config.V1TtsDir, config, config.HubertPath, config.SpeakerEncoderPath),
                     () =>
                     {
-                        if (File.Exists(config.BertModelPath) && File.Exists(config.TokenizerJsonPath))
-                            _bert = new RobertaFeatureExtractor(config.BertModelPath, config.TokenizerJsonPath, opt);
+                        if (File.Exists(config.EffectiveBertModelPath) && File.Exists(config.TokenizerJsonPath))
+                            _bert = new RobertaFeatureExtractor(config.EffectiveBertModelPath, config.TokenizerJsonPath, opt, config.UseBertCache);
                     },
                     () => _chineseG2p = new ChineseG2P(config.ChineseG2PDict, config.PinyinDict, config.CustomDictFullPath ?? "", config.PolyphonicJson, config.JiebaDictDir),
                     () => _englishG2p = new EnglishG2P(config.CmuDict, config.NeuralG2PModel, config.CustomDictFullPath,

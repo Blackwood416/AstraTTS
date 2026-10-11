@@ -110,12 +110,21 @@ namespace AstraTTS.Core.Core
                 isMac ? "1" : "0");
 
             // 6. DirectML
+            // 注意：ORT 1.29+ 官方包不再内置 DML（DirectML 包停更于 1.24.4）。
+            // 无 DML 构建上此调用会抛异常，捕获后回退 CPU/ggml，不影响可用性。
             bool wantDml = !forceCpu && (config.UseDirectML || forceDml);
             if (wantDml && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                sessionOptions.EnableMemoryPattern = false;
-                sessionOptions.AppendExecutionProvider_DML(config.DirectMLDeviceId);
-                DebugLog($"DirectML 加速已启用 (Windows, device={config.DirectMLDeviceId}{(forceDml && !config.UseDirectML ? ", 混合模式声码器" : "")})");
+                try
+                {
+                    sessionOptions.EnableMemoryPattern = false;
+                    sessionOptions.AppendExecutionProvider_DML(config.DirectMLDeviceId);
+                    DebugLog($"DirectML 加速已启用 (Windows, device={config.DirectMLDeviceId}{(forceDml && !config.UseDirectML ? ", 混合模式声码器" : "")})");
+                }
+                catch (Exception ex)
+                {
+                    DebugLog($"⚠️ DirectML 在此 ORT 构建中不可用（{ex.GetType().Name}），回退 CPU。如需 GPU 请启用 UseVocoderGgml（Vulkan/Metal）。");
+                }
             }
             else if (wantDml)
             {
@@ -183,11 +192,35 @@ namespace AstraTTS.Core.Core
         }
 
         /// <summary>
-        /// 加载声码器。混合模式 (UseVocoderDirectML=true) 下仅声码器使用 DirectML，
+        /// 加载声码器。混合模式（UseVocoderGgml / UseVocoderDirectML）下仅声码器使用 GPU，
         /// 加载失败自动回退 CPU，不影响可用性。
         /// </summary>
         private InferenceSession LoadVocoderWithFallback(string modelPath, AstraTTS.Core.Config.TTSConfig config)
         {
+            // 1) ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal）——实测内核 5×，优先尝试。
+            if (config.UseVocoderGgml)
+            {
+                try
+                {
+                    var so = GgmlExecutionProvider.TryCreateSessionOptions(device: "gpu", gpuMinWeightMb: 0);
+                    if (so != null)
+                    {
+                        using (so)
+                        {
+                            var session = new InferenceSession(modelPath, so);
+                            DebugLog("[CPU+GPU 混合] 声码器已使用 ggml（Vulkan/Metal），其余模型保持在 CPU");
+                            return session;
+                        }
+                    }
+                    Console.WriteLine("⚠️ [混合模式] ggml EP 不可用（库缺失或 Vulkan 不可用），尝试 DirectML/CPU。");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [混合模式] 声码器 ggml 加载失败，回退: {ex.Message}");
+                }
+            }
+
+            // 2) DirectML 混合（仅在 ORT 构建包含 DML 时可用；本项目 ORT 1.30 无 DML，会走下方回退）。
             if (config.UseVocoderDirectML && !config.UseDirectML && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 try

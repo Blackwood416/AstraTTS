@@ -68,10 +68,10 @@ namespace AstraTTS.Core.Core
                     () => _engine.LoadModels(config.ModelsV2Dir, config),
                     () =>
                     {
-                        if (File.Exists(config.BertModelPath) && File.Exists(config.TokenizerJsonPath))
+                        if (File.Exists(config.EffectiveBertModelPath) && File.Exists(config.TokenizerJsonPath))
                         {
                             var options = _engine.CreateSessionOptions(config);
-                            _bert = new RobertaFeatureExtractor(config.BertModelPath, config.TokenizerJsonPath, options);
+                            _bert = new RobertaFeatureExtractor(config.EffectiveBertModelPath, config.TokenizerJsonPath, options, config.UseBertCache);
                         }
                     },
                     () => _chineseG2p = new ChineseG2P(config.ChineseG2PDict, config.PinyinDict, config.CustomDictFullPath ?? "", config.PolyphonicJson, config.JiebaDictDir),

@@ -57,6 +57,9 @@ const Config = {
         if (form.DirectMLDeviceId) form.DirectMLDeviceId.value = App.getProp(c, 'directMLDeviceId') ?? 0;
         if (form.UseDeviceKvCache) form.UseDeviceKvCache.checked = App.getProp(c, 'useDeviceKvCache') ?? true;
         if (form.UseVocoderDirectML) form.UseVocoderDirectML.checked = !!App.getProp(c, 'useVocoderDirectML');
+        if (form.UseVocoderGgml) form.UseVocoderGgml.checked = !!App.getProp(c, 'useVocoderGgml');
+        if (form.UseBertCache) form.UseBertCache.checked = App.getProp(c, 'useBertCache') ?? true;
+        if (form.UseBertNoLoopModel) form.UseBertNoLoopModel.checked = !!App.getProp(c, 'useBertNoLoopModel');
 
         // --- Synthesis Defaults ---
         if (form.Speed) form.Speed.value = App.getProp(c, 'speed') ?? 1.0;
@@ -124,6 +127,9 @@ const Config = {
         cfg.DirectMLDeviceId = parseInt(form.DirectMLDeviceId?.value || 0);
         cfg.UseDeviceKvCache = form.UseDeviceKvCache?.checked ?? true;
         cfg.UseVocoderDirectML = form.UseVocoderDirectML?.checked ?? false;
+        cfg.UseVocoderGgml = form.UseVocoderGgml?.checked ?? false;
+        cfg.UseBertCache = form.UseBertCache?.checked ?? true;
+        cfg.UseBertNoLoopModel = form.UseBertNoLoopModel?.checked ?? false;
 
         // Synthesis defaults
         cfg.Speed = parseFloat(form.Speed?.value || 1.0);

@@ -137,3 +137,6 @@ venv/
 
 /releases/
 /publish-mac-arm64/
+
+# ggml plugin EP binary (56 MB; see AstraTTS.Core/third_party/README.md)
+AstraTTS.Core/third_party/*.dll

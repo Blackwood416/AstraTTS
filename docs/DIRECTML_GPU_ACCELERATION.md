@@ -322,9 +322,109 @@ ORT 对其使用 CPU 控制流内核。BERT 每条中文分句都要跑一次，
   因此不会出现第七章"全 DML 反而更慢"的现象。
 - 若未来在更强 GPU 上解码器 DML 有实质改进，仍可直接切换到全 `UseDirectML`。
 
-## 九、参考（固定到验证时点）
+## 九、第三轮优化：BERT 缓存 + roberta 去 Loop（已实施）
+
+按第七节结论推进的两项优化，第三项（声码器固定形状）与第四项（噪声外置）
+经评估后跳过，证据见 9.3/9.4。
+
+### 9.1 BERT 特征缓存（已实施）
+
+**实现**：`BertFeatureCache.cs`（FIFO，容量 256，线程安全）+ 接入
+`RobertaFeatureExtractor.Extract`（新增 `UseCache` 开关，构造参数控制）。
+键 = 文本 + word2ph（防止同文本异对齐误命中）；输出数组只读共享
+（两处调用方均 `Buffer.BlockCopy` 后即弃，已核实）。
+计算在锁外进行，不阻塞流式多句并行预取。
+
+**实测**（同一引擎实例连续合成，CPU，短文本 "今天天气不错，我们出去走走吧。"）：
+
+| 配置 | 第 1/2/3 次 |
+|---|---|
+| 无缓存 | 2781 / 3156 / 3089 ms |
+| 有缓存 | 2265 / 2598 / 2532 ms |
+
+**约 18% 提升**；DebugMode 日志确认命中：
+`[BERT Cache] 命中: '今天天气不错' (rows=12), 累计 命中=3 未命中=4`。
+参考音色文本（"良宵方始"等）在首次加载时即被缓存，后续切换音色也能受益。
+
+**配置**：`UseBertCache`（默认 true）；WebUI 已暴露开关。
+
+### 9.2 roberta 去 Loop（已实施，并存可切换）
+
+**问题**：roberta 图中 `/Loop` 节点是 `torch.repeat_interleave(hidden, repeats)` 的
+逐 token 展开实现，DirectML 无 Loop 内核 → 强制 CPU 执行 + 设备↔主机搬运。
+profile 显示 DML 后端下该节点单次占 **278.6 ms**（CPU 后端则无此问题，因为本来就在 CPU）。
+
+**实现**：图手术脚本 `tools/converter/roberta_noloop.py` 把 Loop 替换为等价向量化子图：
+
+```
+cum  = CumSum(repeats_norm, axis=0)        # [M] 前缀和
+total= ReduceSum(repeats_norm, axis=0)     # [1] Σr
+ridx = CumSum(ConstantOfShape(total, 1)) - 1
+mask = LessOrEqual(cum[1,M], ridx[total,1])# [total, M] 广播
+idx  = ReduceSum(Cast(mask, int64), axes=[1])
+phone_features = Gather(hidden_content, idx)
+```
+
+所需算子（CumSum/LessOrEqual/ReduceSum/Gather/Cast/ConstantOfShape）
+**均有 DirectML 内核**（Loop 注册数为 0）。
+
+**正确性验证**（`_tooling/robertacmp`，CPU，9 用例）：
+常规/含 0 重复/全零/全 1/单元素广播/长短文本 — **全部与原型逐位一致**。
+（注：过程序迭代中出现过两个 bug——用 `Shape` 求 total 应为 `ReduceSum`；
+`keepdims=1` 导致输出多一维——均被对比工具捕获并修正。）
+
+**性能实测**（同一输入 ids=82, Σr=160，隔离完整前向）：
+
+| 后端 | 原模型 | 去 Loop | 提升 |
+|---|---:|---:|---:|
+| CPU | 210.1 ms | 209.0 ms | 0.5% |
+| **DML** | **186.9 ms** | **34.1 ms** | **81.7%** |
+
+**结论**：收益集中在 DirectML 后端（Loop 正是其瓶颈）；CPU 后端几乎无差别
+（Loop 在 CPU 上本来就快）。这精确印证第七节的 profile 分析。
+
+**接线**：`UseBertNoLoopModel`（默认 **false**，因需先验证）；
+`EffectiveBertModelPath` 在开启且文件存在时用 `roberta_noloop.onnx`，否则自动回退原模型。
+两个模型并存（均 599MB，磁盘共 ~1.2GB，E: 剩余 451GB 充足）。
+
+**启用建议**：使用 DirectML 后端时开启；纯 CPU 后端可不开（无收益）。
+`config.yaml` 设 `UseBertNoLoopModel: true` 或 WebUI 勾选。
+
+### 9.3 声码器固定形状（评估后跳过）
+
+**否定证据**（结构分析，详见第七节）：vits 的 `encoder_ssl`/`encoder2` 是
+非因果全连接注意力（13 个 `Softmax(axis=-1)` 节点覆盖 2×pred 时间轴），
+且图中 mask 链为死代码（`Equal(填充1, 0)` 恒 false，Where 永远取 logits 分支）。
+在 `pred_semantic` 末尾 padding 会通过注意力分母**改变所有前缀 token 的输出**。
+
+**收益上限**：vits 的 CPU 耗时仅 13.2 ms（1.4%），即使全部消除也微不足道。
+
+**若要实现**：需真 mask 手术（改写 mask 链为有效屏蔽）+ 新增 valid_len 输入 +
+重验证卷积边界与相对位置编码，属高风险改动。
+
+### 9.4 采样噪声外置（评估后跳过）
+
+`RandomNormalLike` 在 DML 无注册。但实测每步 CPU 耗时仅 **43 µs**
+（stage_decoder）/ **322 µs**（vits，pred=40），合计占比 <0.02%。
+需修改两个模型 + C# 每步喂噪声，收益与风险不成比例。
+
+### 9.5 当前推荐的配置组合
+
+| 场景 | 推荐配置 |
+|---|---|
+| Web 服务（长驻进程） | `UseBertCache: true` + 视后端选 `UseBertNoLoopModel` |
+| DirectML 后端 | `UseBertNoLoopModel: true`（81.7% 提升） |
+| 纯 CPU 后端 | `UseBertCache: true`，可不启用去 Loop 模型 |
+| 长文本 | 优先非流式（见 6.5：省约 28%） |
+| 声码器 GPU（本机最优） | `UseVocoderGgml: true`（见 GGML_VULKAN_MIGRATION.md；ORT 1.30 下替代 DML 混合模式） |
+
+> 注：以上数字均为 AMD RX 5500 XT + GPU 低占用条件下的实测；
+> 其他硬件请用 `_tooling` 下的工具复测。
+
+## 十、参考（固定到验证时点）
 
 - ORT DirectML EP：同会话并发限制、memory pattern、sequential 模式。
 - ORT C#：`OrtIoBinding`、`RunWithBinding`、`OrtMemoryInfo("DML", ...)`。
 - 项目内：`config.template.yaml`（根级 PascalCase 键）、`InferenceEngineV1.cs`
   （两处解码循环）、`DmlKvDecodeLoop.cs`（设备 KV 实现）。
+- ggml (Vulkan/Metal) 声码器迁移：见 `docs/GGML_VULKAN_MIGRATION.md`（第五轮，ORT 1.30）。

@@ -93,6 +93,22 @@ namespace AstraTTS.Core.Config
         [JsonIgnore]
         public string BertModelPath => Path.Combine(V1ExtraDir, "bert", "roberta.onnx");
 
+        /// <summary>
+        /// 实际使用的 BERT 模型路径。UseBertNoLoopModel=true 且去 Loop 变体存在时优先使用它，
+        /// 否则回退到标准模型（保证任何情况下都能加载）。
+        /// </summary>
+        [JsonIgnore]
+        public string EffectiveBertModelPath
+        {
+            get
+            {
+                var standard = BertModelPath;
+                if (!UseBertNoLoopModel) return standard;
+                var noLoop = Path.Combine(V1ExtraDir, "bert", "roberta_noloop.onnx");
+                return File.Exists(noLoop) ? noLoop : standard;
+            }
+        }
+
         [JsonIgnore]
         public string TokenizerJsonPath => Path.Combine(V1ExtraDir, "bert", "tokenizer", "tokenizer.json");
 
@@ -233,8 +249,32 @@ namespace AstraTTS.Core.Config
         /// 混合模式：仅声码器 (vits) 使用 DirectML GPU，其余模型保持 CPU（仅 Windows + V1 引擎生效）。
         /// 适用于 GPU 解码无收益、但声码器明显受益的机器；与 UseDirectML 相互独立。
         /// 声码器 DML 加载失败时自动回退 CPU，不影响可用性。默认 false。
+        /// 注意：本项目 ORT 升级到 1.30（ggml 所需）后构建不再包含 DML，此项会静默回退；
+        /// 声码器 GPU 加速请改用 UseVocoderGgml。
         /// </summary>
         public bool UseVocoderDirectML { get; set; } = false;
+
+        /// <summary>
+        /// 混合模式：仅声码器 (vits) 使用 ggml 插件 EP（Windows/Linux=Vulkan，macOS=Metal），
+        /// 其余模型保持 CPU。实测 vits 在 Vulkan 上比 CPU 快约 5 倍（AMD RX 5500 XT），
+        /// 流式整链路约 2×、非流式约 25%。需 ORT 1.29+ 与 onnxruntime_ggml 运行库；
+        /// 库缺失或加载失败时自动回退 CPU，不影响可用性。与 UseVocoderDirectML 同时开启时本项优先。默认 false。
+        /// </summary>
+        public bool UseVocoderGgml { get; set; } = false;
+
+        /// <summary>
+        /// 是否启用 BERT 特征缓存。开启后同一文本（含对齐）的重复调用直接复用结果，
+        /// 省去一次约 280–390 ms 的 BERT 前向。缓存随引擎实例存活。默认 true。
+        /// </summary>
+        public bool UseBertCache { get; set; } = true;
+
+        /// <summary>
+        /// 是否使用去 Loop 的 roberta 模型（roberta_noloop.onnx）。
+        /// 该变体把图中导致约 278 ms CPU 控制流的 Loop 节点替换为等价的向量化算子
+        /// （repeat_interleave 的 CumSum+Gather 实现），CPU 与 GPU 后端均受益。
+        /// 文件不存在时自动回退原模型。默认 false（需先用对比工具验证输出一致后再开启）。
+        /// </summary>
+        public bool UseBertNoLoopModel { get; set; } = false;
 
         /// <summary>
         /// 是否启用 CoreML 加速（仅 macOS 有效）。
