@@ -29,6 +29,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <!-- 情感方向向量 τ（约 80KB/情感），随构建输出分发，并传递到引用项目（CLI/Web）。
+         运行时优先使用 ResourcesDir/EmotionVectorPath，缺失时回退到输出目录下的同名目录。 -->
+    <Content Include="emotion_vectors/**/*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 <!--
   <ItemGroup>
     <Content Include="mandarin_pinyin.dict">

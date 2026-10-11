@@ -94,6 +94,19 @@ namespace AstraTTS.Core.Core
         public string? ReferenceId { get; set; }
 
         /// <summary>
+        /// 情感 ID（可选，如 "happy"/"angry"/"sad"）。设置后在使用参考音频前，
+        /// 向说话人嵌入注入对应情感方向向量 τ。需要全局 UseEmotionControl=true
+        /// 且 τ 文件存在；否则静默忽略。
+        /// </summary>
+        public string? EmotionId { get; set; }
+
+        /// <summary>
+        /// 情感强度 α（可选）。覆盖全局 EmotionAlpha。
+        /// 注入公式：x_new = x_base + α·||x_base||·τ̂。
+        /// </summary>
+        public float? EmotionAlpha { get; set; }
+
+        /// <summary>
         /// G2P 优先级模式 (可选): 0-词典优先, 1-仅词典, 2-模型优先。
         /// 如果不设置，则使用全局配置。
         /// </summary>

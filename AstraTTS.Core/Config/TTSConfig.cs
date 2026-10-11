@@ -252,6 +252,52 @@ namespace AstraTTS.Core.Config
         /// </summary>
         public bool UseBertNoLoopModel { get; set; } = false;
 
+        // ============================================================
+        // 情感控制（无参考音频的情感引导）
+        // ============================================================
+
+        /// <summary>
+        /// 是否启用情感控制。开启后会在加载参考音频时按请求的 EmotionId 注入情感方向向量。
+        /// τ 文件缺失时静默禁用（不影响正常合成）。默认 false。
+        /// </summary>
+        public bool UseEmotionControl { get; set; } = false;
+
+        /// <summary>
+        /// 情感方向向量 (τ) 目录，相对 ResourcesDir。默认 "emotion_vectors"。
+        /// 目录内应包含 manifest.json 与 tau_&lt;emotion&gt;.f32（由 tools/emotion/extract_tau.py 生成）。
+        /// </summary>
+        public string EmotionVectorPath { get; set; } = "emotion_vectors";
+
+        /// <summary>
+        /// 默认情感强度 α（0~1.5）。x_new = x_base + α·||x_base||·τ̂。
+        /// 经验范围 0.1~0.5：过小无明显效果，过大损伤音色相似度。默认 0.3。
+        /// </summary>
+        public float EmotionAlpha { get; set; } = 0.3f;
+
+        /// <summary>情感方向向量目录的完整路径。</summary>
+        [JsonIgnore]
+        public string EmotionVectorFullPath =>
+            Path.IsPathRooted(EmotionVectorPath)
+                ? EmotionVectorPath
+                : Path.Combine(ResourcesDir, EmotionVectorPath);
+
+        /// <summary>
+        /// 实际使用的 τ 目录：优先 ResourcesDir/EmotionVectorPath，若不存在则回退到
+        /// 应用基目录下的同名目录（便于把 τ 随程序分发而不依赖用户资源包）。
+        /// </summary>
+        [JsonIgnore]
+        public string EffectiveEmotionVectorPath
+        {
+            get
+            {
+                var primary = EmotionVectorFullPath;
+                if (Directory.Exists(primary)) return primary;
+                var fallback = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, EmotionVectorPath);
+                return Directory.Exists(fallback) ? fallback : primary;
+            }
+        }
+
+
         /// <summary>
         /// 是否启用 CoreML 加速（仅 macOS 有效）。
         /// 默认关闭：实测对 GPT-SoVITS 这类带循环控制流的模型，CoreML 子图切分反而比纯 CPU 慢，

@@ -18,6 +18,17 @@ namespace AstraTTS.Web.Models
         public string? ReferenceId { get; set; }
 
         /// <summary>
+        /// 情感 ID (可选，如 "happy"/"angry"/"sad"/"surprise"/"fearful"/"playfulness")。
+        /// 需全局 UseEmotionControl=true 且 τ 文件存在。不指定或 "neutral" 表示不注入。
+        /// </summary>
+        public string? EmotionId { get; set; }
+
+        /// <summary>
+        /// 情感强度 α (0~1.5)。不指定则使用全局 EmotionAlpha（默认 0.3）。
+        /// </summary>
+        public float? EmotionAlpha { get; set; }
+
+        /// <summary>
         /// 语速 (0.5 - 2.0)。
         /// </summary>
         public float? Speed { get; set; }

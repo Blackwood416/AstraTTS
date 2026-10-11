@@ -15,6 +15,8 @@ namespace AstraTTS.CLI
         private static string? _outputPath;
         private static bool _streamingPlayback;
         private static int? _priorityMode;
+        private static string? _emotionId;
+        private static float? _emotionAlpha;
         private static WasapiLowLatencyHelper? _latencyHelper;
 
         [SupportedOSPlatform("windows")]
@@ -116,6 +118,26 @@ namespace AstraTTS.CLI
 
                         case "--debug":
                             forceDebug = true;
+                            break;
+
+                        case "-e":
+                        case "--emotion":
+                            if (value == null)
+                            {
+                                if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) value = args[++i];
+                                else { Console.WriteLine("Error: Missing value for emotion flag."); ShowUsage(); return; }
+                            }
+                            _emotionId = value;
+                            break;
+
+                        case "-a":
+                        case "--emotion-alpha":
+                            if (value == null)
+                            {
+                                if (i + 1 < args.Length && !args[i + 1].StartsWith("-")) value = args[++i];
+                                else { Console.WriteLine("Error: Missing value for emotion-alpha flag."); ShowUsage(); return; }
+                            }
+                            if (float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float a)) _emotionAlpha = a;
                             break;
 
                         default:
@@ -236,7 +258,7 @@ namespace AstraTTS.CLI
                 else
                 {
                     var sw = Stopwatch.StartNew();
-                    var options = new TtsOptions { G2PPriorityMode = _priorityMode };
+                    var options = new TtsOptions { G2PPriorityMode = _priorityMode, EmotionId = _emotionId, EmotionAlpha = _emotionAlpha };
                     var result = await sdk.PredictAsync(text, options, _currentAvatarId, _currentReferenceId);
                     sw.Stop();
 
@@ -280,7 +302,7 @@ namespace AstraTTS.CLI
                     else
                     {
                         var sw = Stopwatch.StartNew();
-                        var options = new TtsOptions { G2PPriorityMode = _priorityMode };
+                        var options = new TtsOptions { G2PPriorityMode = _priorityMode, EmotionId = _emotionId, EmotionAlpha = _emotionAlpha };
                         var result = await sdk.PredictAsync(input, options, _currentAvatarId, _currentReferenceId);
                         sw.Stop();
 
@@ -341,7 +363,7 @@ namespace AstraTTS.CLI
             }
 
             using var pipeline = new AudioPipeline(sdk.SamplingRate, 20, 20);
-            var options = new TtsOptions { G2PPriorityMode = _priorityMode };
+            var options = new TtsOptions { G2PPriorityMode = _priorityMode, EmotionId = _emotionId, EmotionAlpha = _emotionAlpha };
 
             int chunkCount = 0;
             bool playbackStarted = false;
@@ -702,6 +724,24 @@ namespace AstraTTS.CLI
                     }
                     await Task.CompletedTask;
                 }),
+                ("/emotion", "<name> [alpha] - Set emotion guide (neutral to disable)", async () => {
+                    if (string.IsNullOrEmpty(arg)) {
+                        Console.WriteLine($"Current emotion: {(_emotionId ?? "neutral")}" +
+                                          (_emotionAlpha.HasValue ? $" (alpha={_emotionAlpha.Value:0.###})" : ""));
+                        Console.WriteLine("Usage: /emotion <neutral|happy|angry|sad|surprise|fearful|playfulness> [alpha]");
+                    } else {
+                        var ea = arg.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                        var name = ea[0].ToLowerInvariant();
+                        if (name is "off" or "none" or "-") name = "neutral";
+                        _emotionId = name == "neutral" ? null : name;
+                        if (ea.Length > 1 && float.TryParse(ea[1], System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float a))
+                            _emotionAlpha = a;
+                        Console.WriteLine($"Emotion guide set to: {name}" +
+                                          (_emotionAlpha.HasValue ? $" (alpha={_emotionAlpha.Value:0.###})" : ""));
+                    }
+                    await Task.CompletedTask;
+                }),
                 ("/stream", "- Toggle streaming playback", async () => {
                     _streamingPlayback = !_streamingPlayback;
                     Console.WriteLine($"Streaming playback: {(_streamingPlayback ? "ON" : "OFF")}");
@@ -812,6 +852,8 @@ namespace AstraTTS.CLI
             Console.WriteLine("  -s, --stream         Enable real-time streaming playback");
             Console.WriteLine("  -p, --priority <0|1|2> G2P priority mode (0=DictFirst, 1=DictOnly, 2=ModelFirst)");
             Console.WriteLine("  -L, --langs <l1[,l2]>  Allowed languages (comma separated, e.g. zh,en)");
+            Console.WriteLine("  -e, --emotion <name>   Emotion guide (neutral/happy/angry/sad/surprise/fearful/playfulness)");
+            Console.WriteLine("  -a, --emotion-alpha <f> Emotion strength alpha (default: config EmotionAlpha, e.g. 0.3)");
             Console.WriteLine("  --debug              Enable detailed debug logging");
             Console.WriteLine("  -h, --help           Show this help information");
             Console.WriteLine("  --                   Treat all following arguments as text");
@@ -825,6 +867,7 @@ namespace AstraTTS.CLI
             Console.WriteLine("  /output <path>   Change output file or directory");
             Console.WriteLine("  /priority <0|1|2> Change G2P priority mode");
             Console.WriteLine("  /langs <l1[,l2]>   Change allowed languages (comma separated, e.g. zh,en)");
+            Console.WriteLine("  /emotion <name> [a]  Set emotion guide (neutral to disable), optional alpha");
             Console.WriteLine("  /reload          Reload configuration and models");
             Console.WriteLine("  /help            Show this command list");
             Console.WriteLine("  /exit            Quit AstraTTS CLI");

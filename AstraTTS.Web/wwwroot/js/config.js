@@ -57,6 +57,11 @@ const Config = {
         if (form.UseBertCache) form.UseBertCache.checked = App.getProp(c, 'useBertCache') ?? true;
         if (form.UseBertNoLoopModel) form.UseBertNoLoopModel.checked = !!App.getProp(c, 'useBertNoLoopModel');
 
+        // --- Emotion control ---
+        if (form.UseEmotionControl) form.UseEmotionControl.checked = !!App.getProp(c, 'useEmotionControl');
+        if (form.EmotionAlpha) form.EmotionAlpha.value = App.getProp(c, 'emotionAlpha') ?? 0.3;
+        if (form.EmotionVectorPath) form.EmotionVectorPath.value = App.getProp(c, 'emotionVectorPath') ?? 'emotion_vectors';
+
         // --- Synthesis Defaults ---
         if (form.Speed) form.Speed.value = App.getProp(c, 'speed') ?? 1.0;
         if (form.NoiseScale) form.NoiseScale.value = App.getProp(c, 'noiseScale') ?? 0.35;
@@ -122,6 +127,11 @@ const Config = {
         cfg.UseVocoderGgml = form.UseVocoderGgml?.checked ?? false;
         cfg.UseBertCache = form.UseBertCache?.checked ?? true;
         cfg.UseBertNoLoopModel = form.UseBertNoLoopModel?.checked ?? false;
+
+        // Emotion control
+        cfg.UseEmotionControl = form.UseEmotionControl?.checked ?? false;
+        cfg.EmotionAlpha = parseFloat(form.EmotionAlpha?.value || 0.3);
+        cfg.EmotionVectorPath = form.EmotionVectorPath?.value || 'emotion_vectors';
 
         // Synthesis defaults
         cfg.Speed = parseFloat(form.Speed?.value || 1.0);

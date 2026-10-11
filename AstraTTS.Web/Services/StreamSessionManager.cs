@@ -8,6 +8,8 @@ namespace AstraTTS.Web.Services
         public string Text { get; set; } = string.Empty;
         public string? AvatarId { get; set; }
         public string? ReferenceId { get; set; }
+        public string? EmotionId { get; set; }
+        public float? EmotionAlpha { get; set; }
         public float Speed { get; set; }
         public float NoiseScale { get; set; }
         public float Temperature { get; set; }
@@ -26,7 +28,8 @@ namespace AstraTTS.Web.Services
 
         public string CreateSession(string text, string? avatarId, string? referenceId,
             float speed, float noiseScale, float temperature, int topK,
-            int streamingChunkSize, int? priorityMode, List<string>? languages)
+            int streamingChunkSize, int? priorityMode, List<string>? languages,
+            string? emotionId = null, float? emotionAlpha = null)
         {
             var sessionId = Guid.NewGuid().ToString("N");
             var session = new StreamSession
@@ -35,6 +38,8 @@ namespace AstraTTS.Web.Services
                 Text = text,
                 AvatarId = avatarId,
                 ReferenceId = referenceId,
+                EmotionId = emotionId,
+                EmotionAlpha = emotionAlpha,
                 Speed = speed,
                 NoiseScale = noiseScale,
                 Temperature = temperature,

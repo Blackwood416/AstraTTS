@@ -140,3 +140,10 @@ venv/
 
 # ggml plugin EP binary (56 MB; see AstraTTS.Core/third_party/README.md)
 AstraTTS.Core/third_party/*.dll
+
+# Emotion control temp artifacts (local evaluation / dataset staging)
+_downloads/
+_emotion_eval_cli/
+_emotion_eval/
+resources/emotion_vectors_test/
+tools/emotion/*.npy

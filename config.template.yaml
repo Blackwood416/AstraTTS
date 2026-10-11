@@ -52,6 +52,17 @@ UseCoreML: false
 # CoreMLFlags: CoreML 标志位 (按位或)，2=子图回退；4=优先 ANE；16=MLProgram 格式
 CoreMLFlags: 2
 
+# --- 情感控制（无参考音频的情感引导）---
+# UseEmotionControl: 启用情感控制。按请求的 EmotionId 向说话人嵌入 (sv_emb, 20480 维) 注入
+# 情感方向向量 τ（x_new = x_base + α·||x_base||·τ̂），再经 prompt_encoder 重算 ge/ge_advanced，
+# 从而在不提供情感参考音频的情况下引导情感表达。τ 文件缺失时静默禁用。默认 false。
+UseEmotionControl: false
+# EmotionVectorPath: τ 目录（相对 ResourcesDir）。需包含 manifest.json 与 tau_<emotion>.f32，
+# 用 tools/emotion/extract_tau.py 从 CSEMOTIONS 数据集生成。
+EmotionVectorPath: emotion_vectors
+# EmotionAlpha: 默认情感强度 α。经验区间 0.1~0.5：过小无明显效果，过大损伤音色相似度。
+EmotionAlpha: 0.3
+
 # 推理会话池容量：支持的最大并发合成请求数
 PoolCapacity: 1
 # 是否复用内存：开启后不同会话将共享模型实例以节省内存

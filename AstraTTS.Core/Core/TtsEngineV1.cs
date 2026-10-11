@@ -41,9 +41,15 @@ namespace AstraTTS.Core.Core
 
         private TTSConfig? _config;
 
+        // 情感控制（无参考音频的情感引导）
+        private EmotionDirectionController? _emotion;
+
         // 音色切换状态追踪
         private string? _currentAvatarId;
         private string? _currentReferenceId;
+        // 当前注入的情感状态（用于判断是否需要重新计算 ge/ge_advanced）
+        private string? _currentEmotionId;
+        private float _currentEmotionAlpha;
         private readonly object _referenceLock = new();
 
         public int SamplingRate => 32000;
@@ -101,6 +107,16 @@ namespace AstraTTS.Core.Core
             _mixedG2p = new MixedLanguageG2P(_chineseG2p, _englishG2p, _japaneseG2p, _config.G2P.Languages);
             _mixedG2p.DebugMode = config.DebugMode;
 
+            // 情感方向向量（可选；文件缺失时 Loaded=false，功能静默禁用）
+            if (config.UseEmotionControl)
+            {
+                _emotion = new EmotionDirectionController(config.EffectiveEmotionVectorPath);
+                if (_emotion.Loaded)
+                    Console.WriteLine($"[Emotion] 已加载 {_emotion.Emotions.Count} 个情感方向向量 (dim={_emotion.Dim}): {string.Join(", ", _emotion.Emotions)}");
+                else
+                    Console.WriteLine($"[Emotion] 警告: 未找到情感方向向量，情感控制已禁用 (path={config.EffectiveEmotionVectorPath})");
+            }
+
             // 预处理参考音频 (可能包含模型推理，保持在 Task.Run 里或之后执行)
             await Task.Run(PrepareReference);
         }
@@ -116,13 +132,14 @@ namespace AstraTTS.Core.Core
             _englishG2p = other._englishG2p;
             _japaneseG2p = other._japaneseG2p;
             _mixedG2p = other._mixedG2p;
+            _emotion = other._emotion;
             _config = other._config;
         }
 
 
-        private void PrepareReference() => PrepareReference(null, null);
+        private void PrepareReference() => PrepareReference(null, null, null, null);
 
-        private void PrepareReference(string? avatarId, string? referenceId)
+        private void PrepareReference(string? avatarId, string? referenceId, string? emotionId = null, float? emotionAlpha = null)
         {
             if (_config == null) return;
 
@@ -177,6 +194,41 @@ namespace AstraTTS.Core.Core
 
             _sslContent = _engine.GetHubertContent(_refAudio16k);
             _svEmb = _engine.GetSpeakerEmbedding(_refAudio16k);
+
+            // 情感引导（可选）：在 sv_emb 空间注入情感方向向量，
+            // x_new = x_base + α·||x_base||·τ̂
+            // α=0 或未启用/未加载时保持原嵌入不变（输出与原推理逐位一致）。
+            float effectiveAlpha = 0f;
+            if (_emotion != null && _emotion.Loaded && !string.IsNullOrEmpty(emotionId)
+                && !string.Equals(emotionId, EmotionDirectionController.NeutralEmotion, StringComparison.OrdinalIgnoreCase))
+            {
+                var tau = _emotion.GetTau(emotionId);
+                if (tau != null && tau.Length == _svEmb.Length)
+                {
+                    effectiveAlpha = emotionAlpha ?? _config?.EmotionAlpha ?? 0.3f;
+                    if (effectiveAlpha > 0f)
+                    {
+                        var original = _svEmb;
+                        _svEmb = EmotionDirectionController.Apply(original, tau, effectiveAlpha);
+                        Console.WriteLine($"[Emotion] 注入 {emotionId}: α={effectiveAlpha:0.###}, ||x_base||={Math.Sqrt(original.Sum(v => (double)v * v)):0.##}");
+                    }
+                }
+                else if (tau != null)
+                {
+                    Console.WriteLine($"[Emotion] 忽略 {emotionId}: τ 维度 {tau.Length} 与 sv_emb 维度 {_svEmb.Length} 不一致");
+                }
+                else if (_config?.DebugMode == true)
+                {
+                    Console.WriteLine($"[Emotion] 未找到情感 '{emotionId}' 的 τ，忽略");
+                }
+            }
+
+            if (string.IsNullOrEmpty(emotionId) || effectiveAlpha <= 0f)
+            {
+                emotionId = null;
+                effectiveAlpha = 0f;
+            }
+
             var (ge, geAdvanced) = _engine.GetPromptEmbedding(_refAudio32k, _svEmb);
             _ge = ge;
             _geAdvanced = geAdvanced;
@@ -247,7 +299,7 @@ namespace AstraTTS.Core.Core
         public async Task<TtsResult> PredictAsync(string text, TtsOptions options)
         {
             // 检测音色切换
-            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
+            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId, options.EmotionId, options.EmotionAlpha);
 
             // 1. 识别全文语言倾向，为分句处理提供全局上下文
             var overallMode = LanguageDetector.DetectMode(text);
@@ -301,7 +353,7 @@ namespace AstraTTS.Core.Core
         /// <summary>
         /// 检查当前加载的音色是否与请求匹配，如不匹配则重新加载。
         /// </summary>
-        private void EnsureReferenceLoaded(string? avatarId, string? referenceId)
+        private void EnsureReferenceLoaded(string? avatarId, string? referenceId, string? emotionId = null, float? emotionAlpha = null)
         {
             if (_config == null) return;
 
@@ -334,20 +386,45 @@ namespace AstraTTS.Core.Core
                 }
             }
 
+            // 规范化情感：neutral / 未启用 / τ 缺失 / α<=0 时视为无情感
+            string? effectiveEmotion = null;
+            float effectiveAlpha = 0f;
+            if (_emotion != null && _emotion.Loaded && !string.IsNullOrEmpty(emotionId)
+                && !string.Equals(emotionId, EmotionDirectionController.NeutralEmotion, StringComparison.OrdinalIgnoreCase))
+            {
+                var tau = _emotion.GetTau(emotionId);
+                if (tau != null)
+                {
+                    float alpha = emotionAlpha ?? _config.EmotionAlpha;
+                    if (alpha > 0f)
+                    {
+                        // 维度是否匹配在 PrepareReference 中校验（首次调用时 _svEmb 尚未加载）
+                        effectiveEmotion = emotionId;
+                        effectiveAlpha = alpha;
+                    }
+                }
+            }
+
+            bool sameEmotion = string.Equals(effectiveEmotion, _currentEmotionId, StringComparison.OrdinalIgnoreCase)
+                && effectiveAlpha == _currentEmotionAlpha;
+
             // 检查是否需要重新加载
-            if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId)
+            if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId && sameEmotion)
                 return;
 
             lock (_referenceLock)
             {
                 // 双重检查
-                if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId)
+                if (avatarId == _currentAvatarId && effectiveRefId == _currentReferenceId && sameEmotion)
                     return;
 
-                Console.WriteLine($"🔄 切换音色: {avatarId}/{effectiveRefId}");
-                PrepareReference(avatarId, referenceId);
+                Console.WriteLine($"🔄 切换{(!sameEmotion ? "情感/音色" : "音色")}: {avatarId}/{effectiveRefId}" +
+                                  (effectiveEmotion != null ? $" [emotion={effectiveEmotion}, α={effectiveAlpha:0.###}]" : ""));
+                PrepareReference(avatarId, referenceId, effectiveEmotion, effectiveAlpha > 0f ? effectiveAlpha : null);
                 _currentAvatarId = avatarId;
                 _currentReferenceId = effectiveRefId;
+                _currentEmotionId = effectiveEmotion;
+                _currentEmotionAlpha = effectiveAlpha;
             }
         }
 
@@ -362,7 +439,7 @@ namespace AstraTTS.Core.Core
         public async IAsyncEnumerable<float[]> PredictStreamAsync(string text, TtsOptions options, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             // 检测音色切换
-            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId);
+            EnsureReferenceLoaded(options.AvatarId, options.ReferenceId, options.EmotionId, options.EmotionAlpha);
 
             string normalized = LanguageDetector.NormalizePunctuation(text);
 

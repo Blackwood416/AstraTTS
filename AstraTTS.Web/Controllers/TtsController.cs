@@ -41,7 +41,9 @@ namespace AstraTTS.Web.Controllers
                 Temperature = request.Temperature ?? _sdk.Config.Temperature,
                 TopK = request.TopK ?? _sdk.Config.TopK,
                 G2PPriorityMode = request.G2PPriorityMode,
-                Languages = request.Languages
+                Languages = request.Languages,
+                EmotionId = request.EmotionId,
+                EmotionAlpha = request.EmotionAlpha
             };
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -146,7 +148,9 @@ namespace AstraTTS.Web.Controllers
                     request.TopK ?? _sdk.Config.TopK,
                     request.StreamingChunkSize ?? _sdk.Config.StreamingChunkSize,
                     request.G2PPriorityMode,
-                    request.Languages
+                    request.Languages,
+                    request.EmotionId,
+                    request.EmotionAlpha
                 );
 
             var streamUrl = Url.Action(nameof(GetStream), new { sessionId = sessionId });
@@ -191,7 +195,9 @@ namespace AstraTTS.Web.Controllers
                 TopK = session.TopK,
                 StreamingChunkSize = session.StreamingChunkSize,
                 G2PPriorityMode = session.G2PPriorityMode,
-                Languages = session.Languages
+                Languages = session.Languages,
+                EmotionId = session.EmotionId,
+                EmotionAlpha = session.EmotionAlpha
             };
 
             try

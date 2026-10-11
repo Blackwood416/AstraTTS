@@ -18,6 +18,14 @@ const Playground = {
             document.getElementById('pg-speed-val').textContent = e.target.value;
         });
 
+        const emoAlpha = document.getElementById('pg-emotion-alpha');
+        if (emoAlpha) {
+            emoAlpha.addEventListener('input', (e) => {
+                document.getElementById('pg-emotion-alpha-val').textContent =
+                    parseFloat(e.target.value).toFixed(2);
+            });
+        }
+
         // Max 2 langs
         const container = document.getElementById('pg-langs');
         if (container) {
@@ -84,6 +92,13 @@ const Playground = {
             speed: parseFloat(document.getElementById('pg-speed').value),
             languages: selectedLangs.length > 0 ? selectedLangs : null
         };
+
+        // 情感引导（仅 V1 引擎支持；V2 下后端会静默忽略）
+        const emotionId = document.getElementById('pg-emotion')?.value || null;
+        if (emotionId) {
+            params.emotionId = emotionId;
+            params.emotionAlpha = parseFloat(document.getElementById('pg-emotion-alpha').value);
+        }
 
         if (isV2) {
             params.temperature = parseFloat(document.getElementById('pg-temp').value);

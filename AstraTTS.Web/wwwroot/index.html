@@ -230,6 +230,17 @@
                                 <label><input type="checkbox" name="UseBertNoLoopModel"> 使用去 Loop 的 roberta 模型 (roberta_noloop.onnx)</label>
                             </div>
                             <div class="field checkbox-field">
+                                <label><input type="checkbox" name="UseEmotionControl"> 启用情感控制 (无参考音频的情感引导，需 τ 文件)</label>
+                            </div>
+                            <div class="field">
+                                <label>情感强度 α (EmotionAlpha)</label>
+                                <input type="number" name="EmotionAlpha" step="0.05" min="0" max="1.5" placeholder="0.3">
+                            </div>
+                            <div class="field">
+                                <label>情感向量目录 (EmotionVectorPath)</label>
+                                <input type="text" name="EmotionVectorPath" placeholder="emotion_vectors">
+                            </div>
+                            <div class="field checkbox-field">
                                 <label><input type="checkbox" name="DebugMode"> 开启详细调试日志 (DebugMode)</label>
                             </div>
                         </div>
@@ -377,6 +388,25 @@
                             <select id="pg-ref-id" class="styled-select">
                                 <option value="">使用默认</option>
                             </select>
+                        </div>
+
+                        <div class="field">
+                            <label>情感引导 (无参考音频的情感控制)</label>
+                            <select id="pg-emotion" class="styled-select">
+                                <option value="">中性 (不注入)</option>
+                                <option value="happy">开心 happy</option>
+                                <option value="angry">愤怒 angry</option>
+                                <option value="sad">悲伤 sad</option>
+                                <option value="surprise">惊讶 surprise</option>
+                                <option value="fearful">恐惧 fearful</option>
+                                <option value="playfulness">俏皮 playfulness</option>
+                            </select>
+                        </div>
+
+                        <div class="field">
+                            <label>情感强度 α</label>
+                            <input type="range" id="pg-emotion-alpha" min="0" max="1.0" step="0.05" value="0.3">
+                            <div class="range-value" id="pg-emotion-alpha-val">0.30</div>
                         </div>
                         
                         <div class="field">

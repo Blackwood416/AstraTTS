@@ -1,0 +1,59 @@
+{
+  "format": "astra-emotion-tau",
+  "version": 1,
+  "dim": 20480,
+  "source_dataset": "AIDC-AI/CSEMOTIONS (ATH-MaaS/CSEMOTIONS)",
+  "method": "paired-difference: tau_e = mean_s(mean_i x_e^{s,i} - mean_j x_n^{s,j})",
+  "samples_per_speaker_emotion": 20,
+  "n_samples_total": 1380,
+  "emotions": {
+    "happy": {
+      "file": "tau_happy.f32",
+      "dim": 20480,
+      "tau_norm": 23.356040954589844,
+      "consistency": 0.4657793641090393,
+      "n_speakers": 10,
+      "normalized": true
+    },
+    "angry": {
+      "file": "tau_angry.f32",
+      "dim": 20480,
+      "tau_norm": 32.654232025146484,
+      "consistency": 0.5188449621200562,
+      "n_speakers": 10,
+      "normalized": true
+    },
+    "sad": {
+      "file": "tau_sad.f32",
+      "dim": 20480,
+      "tau_norm": 24.130615234375,
+      "consistency": 0.5221945643424988,
+      "n_speakers": 10,
+      "normalized": true
+    },
+    "surprise": {
+      "file": "tau_surprise.f32",
+      "dim": 20480,
+      "tau_norm": 29.034704208374023,
+      "consistency": 0.5160011649131775,
+      "n_speakers": 10,
+      "normalized": true
+    },
+    "playfulness": {
+      "file": "tau_playfulness.f32",
+      "dim": 20480,
+      "tau_norm": 22.084274291992188,
+      "consistency": 0.47972995042800903,
+      "n_speakers": 9,
+      "normalized": true
+    },
+    "fearful": {
+      "file": "tau_fearful.f32",
+      "dim": 20480,
+      "tau_norm": 21.690092086791992,
+      "consistency": 0.4970545768737793,
+      "n_speakers": 10,
+      "normalized": true
+    }
+  }
+}
